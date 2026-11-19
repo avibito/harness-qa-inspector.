@@ -1,0 +1,116 @@
+<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Harness QA Inspector v10.0</title><style>*{box-sizing:border-box}body{margin:0;background:#eaf1f5;color:#263d4e;font:16px Arial,sans-serif;line-height:1.55}.wrap{max-width:920px;margin:auto;padding:16px}section{background:white;border-radius:22px;padding:22px;margin:14px 0;box-shadow:0 4px 15px #19374614}h1{font-size:26px}h2{font-size:22px}h3{font-size:18px}button{background:#146080;color:white;border:0;border-radius:11px;padding:13px 18px;font-weight:bold;font-size:16px;cursor:pointer;margin:4px}button.secondary{background:#667d89}.note{background:#fff1d0;border-right:5px solid #b68b20;padding:12px}.warn{background:#ffe7ea;border-right:5px solid #b43750;padding:14px}.ok{border-right:5px solid #138265}.bad{border-right:5px solid #b43750}.mid{border-right:5px solid #bb8a18}.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.metric{background:#e8f0f5;text-align:center;border-radius:12px;padding:12px}.metric strong{font-size:30px;display:block}textarea{width:100%;height:185px;direction:ltr;text-align:left;font:12px monospace;border:1px solid #bdcbd2;border-radius:9px;padding:9px}details{background:#f6f8fa;padding:13px;border-radius:12px;margin:10px 0;border-right:5px solid #b68b20}summary{cursor:pointer;font-weight:bold}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid #d3dde4;padding:8px;text-align:right}th{background:#e5eef4}.scroll{overflow:auto}code{direction:ltr;unicode-bidi:isolate}small{color:#667d89}.subfinding{border-right:3px solid #9aaebc;padding:7px 11px;margin:7px 0;background:#fff;border-radius:6px}.subfinding small{display:block}.grouphead{font-weight:bold;font-size:17px}.finding{background:#f6f8fa;border-radius:13px;padding:14px;margin:10px 0}footer{text-align:center;color:#667d89;padding:20px;font-size:12px}@media(max-width:420px){section{padding:16px}.wrap{padding:10px}h1{font-size:23px}} .issue-category{border-top:1px solid #d9e1e6;padding:9px 0;margin-top:8px}.issue-category>b{display:block;color:#263d4e;margin-bottom:7px} </style></head><body><main class="wrap"><section><h1>Harness QA Inspector — v10.0</h1><p>מנוע הכרעה לפי רכיב: ראיה ישירה, כיסוי עקיף, פערי כיסוי וסקירה הנדסית. בדיקות קצה־לקצה אינן מוכיחות כל מקטע בנפרד.</p><div class="note">נתוני הדגמה סינתטיים בלבד. כיסוי טופולוגי אינו ראיה למדידה פיזית, אינו מאשר ATP ואינו מתיר שחרור מוצר. v5.0 אינה מושפעת.</div><button onclick="run()">בצע ביקורת טופולוגית</button><button class="secondary" onclick="exportReport()">ייצא JSON</button><button class="secondary" onclick="loadDemo()">טען הדגמה מחדש</button><p id="message" role="status"></p></section><section><h2>1. מקורות נתונים</h2><p>שלושה מקורות JSON ניתנים לעריכה. כל קשת בשרטוט היא מקטע פיזי או רכיב; בדיקת ATP היא מסלול מדידה נפרד.</p><h3>שרטוט — רשת וקשתות</h3><textarea id="drawing" spellcheck="false"></textarea><h3>תוכנית ATP — בדיקות</h3><textarea id="atp" spellcheck="false"></textarea><h3>תוצאות מדידה</h3><textarea id="results" spellcheck="false"></textarea></section><section><h2>2. סיכום ביקורת</h2><div id="summary"></div></section><section><h2>3. מטריצת כיסוי טופולוגי</h2><div id="matrix" class="scroll"></div></section><section><h2>4. ממצאים והמלצות</h2><div id="findings"></div></section><section><h2>5. מגבלות ואישור</h2><p>מסלול מדידה דרך מספר מקטעים עשוי להוכיח תגובה חשמלית מקצה לקצה, אך אינו מוכיח שכל מקטע חווט נכון או שכל רכיב הורכב במקומו. בדיקת דיודה מחייבת כיוון ומצב מדידה מתאימים. בדיקת כיסוי אינה מחליפה בדיקת קבלה, שרטוט מאושר, תוצאות מזוהות או בדיקה פיזית.</p><div class="warn"><b>NOT APPROVED — SYNTHETIC DATA</b><p>אין להסיק אישור שחרור מתוצאות הדגמה.</p></div></section><footer>v10.0 | SYNTHETIC DATA | ENGINEERING REVIEW REQUIRED | NOT APPROVED</footer></main><script>
+const demoDrawing={revision:'C',approved_source:false,source_id:'SYNTH-DRAW-C',edges:[{id:'E01',a:'J1:1',b:'J2:1',kind:'wire',net:'NET-A'},{id:'E02',a:'J1:2',b:'SPL:1',kind:'wire',net:'NET-B'},{id:'E03',a:'SPL:1',b:'J2:2',kind:'wire',net:'NET-B'},{id:'E04',a:'SPL:1',b:'J3:2',kind:'wire',net:'NET-B'},{id:'E05',a:'SHIELD',b:'SHELL',kind:'shield',net:'NET-SH'},{id:'E06',a:'J2:4',b:'D:ANODE',kind:'wire',net:'NET-D'},{id:'E07',a:'D:ANODE',b:'D:CATHODE',kind:'diode',net:'NET-D',forward:'D:ANODE>D:CATHODE'},{id:'E08',a:'D:CATHODE',b:'J3:4',kind:'wire',net:'NET-D'},{id:'E09',a:'J4:1',b:'R1:A',kind:'wire',net:'NET-R'},{id:'E10',a:'R1:A',b:'R1:B',kind:'resistor',ohms:100,net:'NET-R'},{id:'E11',a:'R1:B',b:'J4:2',kind:'wire',net:'NET-R'}]};
+const demoATP={revision:'B',approved_source:false,source_id:'SYNTH-ATP-B',tests:[{id:'T01',a:'J1:1',b:'J2:1',type:'continuity',purpose:'segment'},{id:'T02',a:'J1:2',b:'SPL:1',type:'continuity',purpose:'segment'},{id:'T03',a:'SPL:1',b:'J2:2',type:'continuity',purpose:'segment'},{id:'T03B',a:'J2:2',b:'SPL:1',type:'continuity',purpose:'segment',duplicate_reason:'בדיקת אימות חוזרת מאושרת בתוכנית הדגמה'},{id:'T04',a:'J1:2',b:'J3:2',type:'continuity',purpose:'end_to_end'},{id:'T05',a:'SHIELD',b:'SHELL',type:'continuity',purpose:'segment'},{id:'T06',a:'J2:4',b:'J3:4',type:'continuity',purpose:'end_to_end'},{id:'T07',a:'J4:1',b:'J4:2',type:'resistance',purpose:'end_to_end',min:95,max:105},{id:'T08',a:'J1:1',b:'J2:1',type:'continuity',purpose:'segment'},{id:'T99',a:'GHOST:1',b:'GHOST:2',type:'continuity',purpose:'segment'}]};
+const demoResults={revision:'B',approved_source:false,source_id:'SYNTH-RESULTS-B',measurements:[{test_id:'T01',value:0.2,unit:'ohm',evidence_ref:'SYNTH-M01'},{test_id:'T02',value:0.2,unit:'ohm',evidence_ref:'SYNTH-M02'},{test_id:'T03',value:0.2,unit:'ohm',evidence_ref:'SYNTH-M03'},{test_id:'T03B',value:0.2,unit:'ohm',evidence_ref:'SYNTH-M03B'},{test_id:'T04',value:0.3,unit:'ohm',evidence_ref:'SYNTH-M04'},{test_id:'T05',value:0.3,unit:'ohm',evidence_ref:'SYNTH-M05'},{test_id:'T06',status:'PASS',evidence_ref:'SYNTH-M06'},{test_id:'T07',value:110,unit:'ohm',status:'PASS',evidence_ref:'SYNTH-M07'},{test_id:'T08',value:0.2,unit:'ohm',evidence_ref:'SYNTH-M08'},{test_id:'T99',status:'PASS',evidence_ref:'SYNTH-M99'}]};
+const $=x=>document.getElementById(x);let last=null;const pair=(a,b)=>[a,b].sort().join('|');const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function loadDemo(){$('drawing').value=JSON.stringify(demoDrawing,null,2);$('atp').value=JSON.stringify(demoATP,null,2);$('results').value=JSON.stringify(demoResults,null,2);run()}
+function run(){try{
+const d=JSON.parse($('drawing').value),a=JSON.parse($('atp').value),r=JSON.parse($('results').value);
+if(!Array.isArray(d.edges)||!Array.isArray(a.tests)||!Array.isArray(r.measurements))throw Error('חסרות מערכות edges / tests / measurements');
+const findings=[],add=(code,subject,detail,action)=>findings.push({id:'TP98-'+String(findings.length+1).padStart(3,'0'),code,subject,detail,action});
+if(d.revision!==a.revision)add('REVISION_MISMATCH','CONFIG',`שרטוט ${d.revision} לעומת ATP ${a.revision}`,'לאמת מהדורות ושינויי תצורה');
+if(a.revision!==r.revision)add('REVISION_MISMATCH','ATP↔RESULTS',`ATP ${a.revision} לעומת תוצאות ${r.revision}`,'לאמת מהדורות');
+if(!d.approved_source||!a.approved_source||!r.approved_source)add('UNAPPROVED_SOURCES','CONFIG','לפחות מקור אחד אינו מאושר','לצרף מסמכי מקור מאושרים');
+const nodes=new Set(d.edges.flatMap(e=>[e.a,e.b]));const measurements=new Map(r.measurements.map(x=>[x.test_id,x]));
+const testIds=new Set(),seen=new Map();
+for(const t of a.tests){
+ if(testIds.has(t.id))add('DUPLICATE_TEST_ID',t.id,'מזהה בדיקה כפול','לתקן מזהים');testIds.add(t.id);
+ if(!nodes.has(t.a)||!nodes.has(t.b)){add('ORPHAN_ATP',t.id,`${t.a} ↔ ${t.b} לא מופיע בשרטוט`,'לבדוק שיוך בדיקה');continue}
+ const k=pair(t.a,t.b)+'|'+t.type,previous=seen.get(k);
+ if(previous){if(t.duplicate_reason)add('JUSTIFIED_REPEAT_REVIEW',t.id,`בדיקה חוזרת ל־${previous} עם נימוק: ${t.duplicate_reason}`,'לאמת אישור כפילות ב־ATP');else add('UNJUSTIFIED_DUPLICATE',t.id,`חזרה על ${previous} ללא הצדקה`,'לבדוק כפילות')}else seen.set(k,t.id);
+ if(!measurements.has(t.id))add('MISSING_RESULT',t.id,'אין תוצאת מדידה מקושרת','לצרף מדידה מזוהה');
+}
+const isNumericEvidence=t=>{const m=measurements.get(t.id);return !!(m&&typeof m.value==='number'&&Number.isFinite(m.value)&&m.evidence_ref&&m.unit)};
+const withinLimits=t=>{const m=measurements.get(t.id);return !!(m&&typeof m.value==='number'&&(t.min===undefined||m.value>=t.min)&&(t.max===undefined||m.value<=t.max))};
+const isCompatible=(e,t)=>e.kind==='resistor'?t.type==='resistance':e.kind==='diode'?t.type==='diode'&&t.direction===e.forward:t.type==='continuity';
+// For each end-to-end test, collect only its found path. A graph may have several paths; one selected path is NOT proof of unique physical coverage.
+const indirect=new Map(d.edges.map(e=>[e.id,[]]));
+for(const t of a.tests){if(!nodes.has(t.a)||!nodes.has(t.b))continue;
+ const direct=d.edges.some(e=>pair(e.a,e.b)===pair(t.a,t.b));
+ if(!direct){const path=findPath(d.edges,t.a,t.b);
+  if(path){for(const e of path)indirect.get(e.id).push({test:t,path:path.map(x=>x.id)});
+   if(path.some(e=>e.kind==='diode')&&t.type!=='diode')add('PATH_TEST_TYPE_RISK',t.id,'מסלול מדידה חוצה דיודה אך סוג הבדיקה '+t.type,'נדרשת בדיקת דיודה עם כיוון מתאים');
+   else add('END_TO_END_REVIEW',t.id,`מסלול אפשרי: ${path.map(e=>e.id).join(' → ')}. אין בכך אימות פרטני של מקטעים`,'לבדוק התאמה, גבולות וראיות לכל דרישה');
+  }else add('NO_DRAWING_PATH',t.id,'אין מסלול בשרטוט בין נקודות הבדיקה','לבדוק טופולוגיה');
+ }
+ const m=measurements.get(t.id);
+ if(m&&typeof m.value==='number'&&((t.min!==undefined&&m.value<t.min)||(t.max!==undefined&&m.value>t.max)))add('OUT_OF_LIMIT',t.id,`מדידה ${m.value} ${m.unit||''} מחוץ לגבולות ${t.min??'לא הוגדר'}–${t.max??'לא הוגדר'}; גם אם רשום PASS`,'לעצור ולחקור חריגה');
+}
+// Component-aware end-to-end evaluation. Never infer physical assembly correctness from one measurement.
+const componentChecks=[];
+for(const t of a.tests){
+ if(!nodes.has(t.a)||!nodes.has(t.b))continue;
+ const directEdge=d.edges.find(e=>pair(e.a,e.b)===pair(t.a,t.b));
+ const path=directEdge?[directEdge]:findPath(d.edges,t.a,t.b);
+ if(!path)continue;
+ const components=path.filter(e=>e.kind==='resistor'||e.kind==='diode');
+ if(!components.length)continue;
+ const m=measurements.get(t.id);
+ const issues=[];
+ if(!m)issues.push('MISSING_MEASUREMENT');
+ else{
+  if(typeof m.value!=='number'||!Number.isFinite(m.value))issues.push('NO_NUMERIC_RESULT');
+  if(!m.unit)issues.push('MISSING_UNIT');
+  if(!m.evidence_ref)issues.push('MISSING_EVIDENCE_REF');
+ }
+ if(components.some(e=>e.kind==='diode')){
+  if(t.type!=='diode')issues.push('DIODE_TEST_TYPE_MISMATCH');
+  const diode=components.find(e=>e.kind==='diode');
+  if(t.direction!==diode.forward)issues.push('DIODE_DIRECTION_UNVERIFIED');
+  if(t.min===undefined||t.max===undefined)issues.push('DIODE_LIMITS_MISSING');
+ }
+ if(components.some(e=>e.kind==='resistor')){
+  if(t.type!=='resistance')issues.push('RESISTANCE_TEST_REQUIRED');
+  if(t.min===undefined||t.max===undefined)issues.push('RESISTANCE_LIMITS_MISSING');
+ }
+ if(m&&typeof m.value==='number'&&((t.min!==undefined&&m.value<t.min)||(t.max!==undefined&&m.value>t.max)))issues.push('OUT_OF_LIMIT');
+ const decision=issues.length?'BLOCKED':'MEASUREMENT_CONSISTENT_REVIEW';
+ componentChecks.push({test_id:t.id,components:components.map(e=>e.id),path:path.map(e=>e.id),type:t.type,measurement:m||null,limits:{min:t.min??null,max:t.max??null},decision,issues,physical_assembly_verified:false});
+ for(const issue of issues){if(issue==='OUT_OF_LIMIT'&&findings.some(f=>f.subject===t.id&&f.code==='OUT_OF_LIMIT'))continue;add('COMPONENT_'+issue,t.id,`מסלול ${path.map(e=>e.id).join(' → ')}: ${issue}`,'לתקן בדיקה/ראיה ולהשלים אימות הנדסי');}
+}
+const matrix=[];
+for(const e of d.edges){
+ const direct=a.tests.filter(t=>pair(t.a,t.b)===pair(e.a,e.b));
+ const compatible=direct.filter(t=>isCompatible(e,t));
+ const valid=compatible.filter(t=>isNumericEvidence(t)&&withinLimits(t));
+ const candidates=indirect.get(e.id)||[];
+ const indirectGood=candidates.filter(({test:t,path})=>isNumericEvidence(t)&&withinLimits(t)&&
+   // no generic continuity across component, diode or resistor; resistor needs resistance test, and no diode without direction-specific test
+   (t.type==='continuity'?path.every(id=>['wire','shield'].includes(d.edges.find(x=>x.id===id).kind)):
+    t.type==='resistance'?path.every(id=>d.edges.find(x=>x.id===id).kind!=='diode'):
+    t.type==='diode'&&t.direction&&path.some(id=>d.edges.find(x=>x.id===id).kind==='diode')));
+ let state='COVERAGE_GAP',reason='אין בדיקה מתאימה עם ראיה מזוהה';
+ if(valid.length){state='DIRECT_EVIDENCE';reason='בדיקה ישירה, ערך מספרי וייחוס ראיה (לא אישור שחרור)'}
+ else if(compatible.length){state='ENGINEERING_REVIEW';reason='בדיקה ישירה ללא מדידה/יחידה/ראיה תקפה או מחוץ לגבולות'}
+ else if(direct.length){state='ENGINEERING_REVIEW';reason='בדיקה ישירה מסוג או כיוון שאינם מתאימים'}
+ else if(indirectGood.length){state='INDIRECT_COVERAGE';reason='כיסוי עקיף אפשרי בלבד; אינו מוכיח כל מקטע בנפרד'}
+ else if(candidates.length){state='ENGINEERING_REVIEW';reason='מסלול עקיף קיים, אך סוג הבדיקה/גבולות/ראיות אינם מאפשרים הסקת כיסוי'}
+ if(state==='COVERAGE_GAP')add('COVERAGE_GAP',e.id,`${e.a} ↔ ${e.b} (${e.kind}) ללא ראיית כיסוי מתאימה`,'להשלים בדיקה מאושרת או ראיה חלופית');
+ if(state==='ENGINEERING_REVIEW')add('ENGINEERING_REVIEW',e.id,reason,'לבדוק דרישות, סוג בדיקה, תוצאות ומסמכי מקור');
+ matrix.push({edge:e.id,net:e.net,path:e.a+' ↔ '+e.b,kind:e.kind,direct_tests:direct.map(t=>t.id),indirect_tests:candidates.map(x=>x.test.id),state,reason});
+}
+const counts={};for(const x of matrix)counts[x.state]=(counts[x.state]||0)+1;
+last={version:'10.0',synthetic:true,approved:false,summary:{edges:matrix.length,direct_evidence:counts.DIRECT_EVIDENCE||0,indirect_coverage:counts.INDIRECT_COVERAGE||0,engineering_review:counts.ENGINEERING_REVIEW||0,coverage_gap:counts.COVERAGE_GAP||0,findings:findings.length,component_checks:componentChecks.length,component_blocked:componentChecks.filter(x=>x.decision==='BLOCKED').length,grouped_test_count:[...new Set(findings.filter(f=>a.tests.some(t=>t.id===f.subject)).map(f=>f.subject))].length},matrix,component_checks:componentChecks,findings,grouping_policy:"ATP grouping; primary component finding excluded from secondary display; secondary findings classified; raw findings preserved; no release approval"};
+$('summary').innerHTML=`<div class="warn"><b>אין אישור שחרור.</b> כיסוי עקיף הוא אינדיקציה בלבד; מקורות סינתטיים אינם מאושרים.</div><div class="cards">${[['מקטעים נדרשים',matrix.length],['ראיה ישירה',counts.DIRECT_EVIDENCE||0],['כיסוי עקיף אפשרי',counts.INDIRECT_COVERAGE||0],['לסקירה הנדסית',counts.ENGINEERING_REVIEW||0],['פערי כיסוי',counts.COVERAGE_GAP||0],['בדיקות רכיב חסומות',componentChecks.filter(x=>x.decision==='BLOCKED').length],['מאושרים לשחרור',0]].map(([k,v])=>`<div class="metric"><strong>${v}</strong>${k}</div>`).join('')}</div>`;
+$('matrix').innerHTML='<table><thead><tr><th>מקטע</th><th>רשת</th><th>נקודות</th><th>סוג</th><th>ATP ישיר</th><th>ATP עקיף</th><th>סיווג</th><th>הסבר</th></tr></thead><tbody>'+matrix.map(x=>`<tr><td>${esc(x.edge)}</td><td>${esc(x.net)}</td><td>${esc(x.path)}</td><td>${esc(x.kind)}</td><td>${esc(x.direct_tests.join(', ')||'אין')}</td><td>${esc(x.indirect_tests.join(', ')||'אין')}</td><td><b>${esc(x.state)}</b></td><td>${esc(x.reason)}</td></tr>`).join('')+'</tbody></table>';
+ // Group related findings by ATP test, while retaining every raw finding in JSON.
+ const byTest=new Map(a.tests.map(t=>[t.id,[]]));
+ for(const f of findings){if(byTest.has(f.subject))byTest.get(f.subject).push(f)}
+ const attached=new Set([...byTest.values()].flat().map(f=>f.id));
+ const globalFindings=findings.filter(f=>!attached.has(f.id));
+ const evidenceCodes=new Set(['NO_NUMERIC_RESULT','MISSING_UNIT','MISSING_EVIDENCE_REF','MISSING_MEASUREMENT','MISSING_RESULT']);
+ const requirementCodes=new Set(['DIODE_LIMITS_MISSING','RESISTANCE_LIMITS_MISSING']);
+ const riskCodes=new Set(['PATH_TEST_TYPE_RISK','END_TO_END_REVIEW','JUSTIFIED_REPEAT_REVIEW']);
+ const category=f=>{const c=f.code.replace(/^COMPONENT_/,'');return evidenceCodes.has(c)?'ראיות מדידה חסרות':requirementCodes.has(c)?'דרישות קבלה חסרות':riskCodes.has(c)?'סיכונים וסקירה הנדסית':'אי־התאמות וחסמים הנדסיים'};
+ const mainIssue=c=>c.issues.includes('OUT_OF_LIMIT')?'OUT_OF_LIMIT':c.issues.includes('DIODE_TEST_TYPE_MISMATCH')?'DIODE_TEST_TYPE_MISMATCH':c.issues.includes('RESISTANCE_TEST_REQUIRED')?'RESISTANCE_TEST_REQUIRED':c.issues.find(x=>!evidenceCodes.has(x))||c.issues[0]||'ENGINEERING_REVIEW';
+ const sub=f=>`<div class="subfinding"><b>${esc(f.code)}</b> <small>${esc(f.id)} | ${esc(f.detail)}</small><small>פעולה: ${esc(f.action)}</small></div>`;
+ const classified=fs=>{const order=['אי־התאמות וחסמים הנדסיים','דרישות קבלה חסרות','ראיות מדידה חסרות','סיכונים וסקירה הנדסית'];return order.map(cat=>{const group=fs.filter(f=>category(f)===cat);return group.length?`<div class="issue-category"><b>${esc(cat)} (${group.length})</b>${group.map(sub).join('')}</div>`:''}).join('')};
+ const componentHTML=componentChecks.map(c=>{const linked=byTest.get(c.test_id)||[];const primary=mainIssue(c);const primaryCode='COMPONENT_'+primary;const duplicates=linked.filter(f=>f.code===primaryCode);const secondary=linked.filter(f=>f.code!==primaryCode);return `<div class="finding ${c.decision==='BLOCKED'?'bad':'mid'}"><div class="grouphead">${esc(c.test_id)} — ${esc(c.decision)}</div><p><b>הכרעה ראשית:</b> ${esc(primary)}</p><p>מקטעים: ${esc(c.path.join(' → '))} | רכיבים: ${esc(c.components.join(', '))}</p><p>מדידה: ${esc(c.measurement?.value??'אין')} ${esc(c.measurement?.unit??'')} | גבולות: ${esc(c.limits.min??'לא הוגדר')}–${esc(c.limits.max??'לא הוגדר')}</p>${duplicates.length?`<small>מזהה ממצא ראשי: ${esc(duplicates.map(f=>f.id).join(', '))}</small>`:''}<details><summary>חסמים נלווים וראיות חסרות (${secondary.length})</summary>${classified(secondary)||'<p>לא נמצאו ממצאים נלווים</p>'}</details><small>אימות הרכבה פיזית: לא בוצע. אין אישור שחרור.</small></div>`}).join('');
+ const otherTests=[...byTest.entries()].filter(([id,fs])=>fs.length&&!componentChecks.some(c=>c.test_id===id));
+ const otherHTML=otherTests.map(([id,fs])=>`<div class="finding bad"><b>${esc(id)} — ${fs.length} ממצאים</b><details><summary>הצג ממצאים ופעולות</summary>${classified(fs)}</details></div>`).join('');
+ $('findings').innerHTML='<h3>הכרעה הנדסית לפי רכיב</h3>'+componentHTML+'<h3>ממצאים לפי בדיקת ATP</h3>'+otherHTML+'<h3>ממצאי תצורה וכיסוי לפי מקטע</h3>'+globalFindings.map(sub).join('')+'<p><small>כל הממצאים הגולמיים נשמרים בדוח JSON. ממצא ראשי מוצג פעם אחת בלבד; כל הממצאים הגולמיים נשמרים. קיבוץ אינו אישור סגירה ואינו מחליף ראיה.</small></p>';
+$('message').textContent='הביקורת הושלמה. אין אישור שחרור.';
+}catch(e){$('message').textContent='שגיאה בנתונים: '+e.message;}}
+function findPath(edges,start,end){const q=[{node:start,path:[]}],visited=new Set([start]);while(q.length){const x=q.shift();if(x.node===end)return x.path;for(const e of edges){const n=e.a===x.node?e.b:e.b===x.node?e.a:null;if(n&&!visited.has(n)){visited.add(n);q.push({node:n,path:[...x.path,e]})}}}return null}
+function exportReport(){if(!last){$('message').textContent='יש לבצע ביקורת תחילה';return}const blob=new Blob([JSON.stringify(last,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='harness_qa_v100_classified_findings_report.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}loadDemo();
+</script></body></html>
