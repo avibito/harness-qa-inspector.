@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>בדיקת רתמות — צוות</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+/* VOICE: a calm bench instrument for QA inspectors — clinical, exact, no decoration.
+   IDEA: the test-bench readout: a verdict dial over a continuity strip of every net.
+   PICTURE: the coverage strip — one tick per net, coloured by match state — under the verdict.
+   COLOUR and TYPE: aluminium ground, black ink, signal-orange pointer; Assistant + Plex Mono for pins.
+   LAYOUT: top bar with views; one column of panels; tables stack on phones. */
+:root{color-scheme:light dark;
+ --bg:light-dark(#e9eaec,#141517);--panel:light-dark(#fff,#1d1f22);--ink:light-dark(#141517,#eceef0);--mute:light-dark(#5d636b,#a1a7ae);
+ --line:light-dark(#d3d6da,#30343a);--acc:#ff4f00;--ok:light-dark(#11795a,#3fcf9a);--bad:light-dark(#c0262d,#ff6b6b);--warn:light-dark(#9a6700,#f2b84b);
+ --info:light-dark(#1f5f99,#7cb8ff);--chip:light-dark(#f1f2f4,#262a2f)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Assistant,system-ui,sans-serif;overflow-x:clip}
+header{position:sticky;top:0;z-index:5;background:var(--ink);color:var(--bg)}
+.bar{max-width:1240px;margin:auto;display:flex;align-items:center;gap:6px;padding:8px max(4vw,12px);flex-wrap:wrap}
+.brand{font-weight:800;font-size:18px;margin-inline-end:auto;display:flex;align-items:center;gap:8px}
+.brand i{width:10px;height:10px;border-radius:50%;background:var(--acc);display:inline-block}
+nav a{color:inherit;text-decoration:none;padding:8px 12px;border-radius:8px;font-weight:600;min-height:40px;display:inline-flex;align-items:center}
+nav a.on{background:var(--acc);color:#fff}
+#who{font-size:13px;opacity:.8}
+main{max-width:1240px;margin:auto;padding:18px max(4vw,12px) 60px}
+h1{font-size:clamp(26px,4vw,40px);line-height:1.08;margin:6px 0 14px;text-wrap:balance}
+h2{font-size:21px;margin:0 0 10px}h3{font-size:17px;margin:16px 0 6px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin:0 0 16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:14px}
+.muted{color:var(--mute)}.small{font-size:14px}
+button,.btn{font:600 16px Assistant,sans-serif;border:0;border-radius:10px;padding:10px 16px;min-height:44px;cursor:pointer;background:var(--ink);color:var(--bg)}
+button.acc{background:var(--acc);color:#fff}button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button:disabled{opacity:.45;cursor:not-allowed}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+label{display:block;font-weight:600;font-size:14px;margin:8px 0 4px}
+input,select,textarea{font:16px Assistant,sans-serif;width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);min-height:44px}
+textarea.code{font:14px/1.5 'IBM Plex Mono',monospace;direction:ltr;text-align:left;min-height:340px;white-space:pre}
+.mono,code{font-family:'IBM Plex Mono',monospace;font-size:.92em;direction:ltr;unicode-bidi:isolate}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{border-bottom:1px solid var(--line);padding:8px 6px;text-align:start;vertical-align:top}
+th{font-size:13px;color:var(--mute);font-weight:600}
+tr.click{cursor:pointer}tr.click:hover{background:var(--chip)}
+.tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:13px;font-weight:700;background:var(--chip);white-space:nowrap}
+.t-ok{color:var(--ok)}.t-bad{color:var(--bad)}.t-warn{color:var(--warn)}.t-info{color:var(--info)}
+.verdict{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:center}
+.dial{width:132px;height:132px;border-radius:50%;display:grid;place-items:center;text-align:center;font-weight:800;font-size:15px;line-height:1.15;border:10px solid var(--line);padding:8px}
+.dial.ok{border-color:var(--ok)}.dial.bad{border-color:var(--bad)}.dial.warn{border-color:var(--warn)}
+.strip{display:flex;gap:2px;height:44px;margin:12px 0 4px;align-items:stretch}
+.strip i{flex:1;border-radius:2px;background:var(--ok);min-width:2px}
+.strip i.b{background:var(--bad)}.strip i.w{background:var(--warn)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--mute)}
+.legend b{display:inline-block;width:10px;height:10px;border-radius:2px;margin-inline-end:5px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:10px;margin:12px 0}
+.kpi{background:var(--chip);border-radius:10px;padding:10px 12px}.kpi strong{display:block;font-size:26px;line-height:1.1}
+.find{border-inline-start:4px solid var(--line);padding:8px 12px;margin:6px 0;background:var(--chip);border-radius:6px}
+.find.blocker{border-color:var(--bad)}.find.gap{border-color:var(--acc)}.find.review{border-color:var(--warn)}.find.info{border-color:var(--info)}
+details>summary{cursor:pointer;font-weight:700;padding:6px 0;min-height:36px}
+.note{border-inline-start:4px solid var(--warn);background:var(--chip);padding:10px 12px;border-radius:6px;margin:10px 0}
+.err{border-color:var(--bad)}
+.thumbs{display:flex;gap:8px;overflow-x:auto;padding:4px 0}.thumbs img{height:130px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.netlist-check{columns:2 280px;gap:18px}.netlist-check label{font-weight:400;display:flex;gap:8px;align-items:flex-start;break-inside:avoid;margin:0 0 6px}
+.netlist-check input{width:20px;min-height:20px;margin-top:3px}
+.empty{padding:28px;text-align:center;color:var(--mute)}
+.toast{position:fixed;bottom:18px;inset-inline-start:18px;background:var(--ink);color:var(--bg);padding:12px 16px;border-radius:10px;max-width:420px;z-index:9;box-shadow:0 6px 24px #0004}
+dialog{border:0;border-radius:14px;padding:20px;max-width:520px;width:calc(100% - 24px);background:var(--panel);color:var(--ink)}
+dialog::backdrop{background:#0007}
+.scroll{overflow-x:auto}
+@media(max-width:600px){header{position:static}nav{display:flex;overflow-x:auto;width:100%}nav a{flex:none}#who{display:none}table{font-size:13px}.stack thead{display:none}.stack tr{display:grid;padding-block:8px;border-bottom:1px solid var(--line)}.stack td{display:flow-root;border:0;padding:3px 0;padding-inline-start:7.5em;text-align:start}.stack td::before{content:attr(data-l);float:inline-start;width:7em;margin-inline-start:-7.5em;color:var(--mute);font-size:12px}.stack td:empty{display:none}.verdict{grid-template-columns:1fr}.dial{margin:auto}}
+@media(prefers-reduced-motion:no-preference){.strip i{transition:transform .2s}.strip i:hover{transform:scaleY(1.15)}}
+</style>
+<script>new MutationObserver(()=>{for(const c of document.querySelectorAll('.stack td:not([data-l])')){let i=0,p=c;while(p=p.previousElementSibling)i+=p.colSpan;c.dataset.l=c.closest('table').rows[0].cells[i]?.textContent||''}}).observe(document,{childList:true,subtree:true})</script>
+</head>
+<body>
+<header><div class="bar">
+  <div class="brand"><i></i>בדיקת רתמות</div>
+  <nav id="nav">
+    <a href="#home">ראשי</a><a href="#run">בדיקה חדשה</a><a href="#netlists">נטליסטים</a><a href="#findings">ממצאים</a><a href="#history">היסטוריה</a>
+  </nav>
+  <span id="who"></span>
+</div></header>
+<main id="view"><div class="empty">טוען…</div></main>
+<dialog id="dlg"><form method="dialog" id="dlgForm"><h2 id="dlgTitle"></h2><div id="dlgBody"></div><div class="row" style="margin-top:14px"><button value="ok" class="acc" id="dlgOk">אישור</button><button value="cancel" class="ghost">ביטול</button></div></form></dialog>
+<script src="lib/pdf.min.js"></script>
+<script src="engine.js"></script>
+<script src="adapters.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

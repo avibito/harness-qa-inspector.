@@ -160,7 +160,7 @@
     STATUS_CONTRADICTS_VALUE: 'blocker', ORPHAN_ATP: 'blocker', NO_DRAWING_PATH: 'blocker', DUPLICATE_TEST_ID: 'blocker',
     DUPLICATE_RESULT: 'blocker', NODE_IN_MULTIPLE_NETS: 'blocker', PIN_NOT_IN_MECHANICAL: 'blocker', CONNECTOR_NOT_IN_MECHANICAL: 'blocker',
     COVERAGE_GAP: 'gap', UNTESTED_POINT: 'gap', MISSING_RESULT: 'gap', ISOLATION_GAP: 'gap', SPARE_PIN_UNTESTED: 'gap',
-    ENGINEERING_REVIEW: 'review', END_TO_END_REVIEW: 'review', PATH_TEST_TYPE_RISK: 'review', PARALLEL_PATH: 'review',
+    ENGINEERING_REVIEW: 'review', END_TO_END_REVIEW: 'review', END_TO_END_SPLICE: 'info', PATH_TEST_TYPE_RISK: 'review', PARALLEL_PATH: 'review',
     JUSTIFIED_REPEAT_REVIEW: 'info', UNJUSTIFIED_DUPLICATE: 'review', RESULT_WITHOUT_TEST: 'review', LIMITS_UNDEFINED: 'review',
     UNIT_NOT_COMPARABLE: 'review', MISSING_EVIDENCE: 'review', NO_MECHANICAL_SOURCE: 'info'
   };
@@ -287,7 +287,9 @@
       if (!na.path) {
         add('PATH_TEST_TYPE_RISK', t.id, `המסלול ${full.map(e => e.id).join(' → ')} עובר דרך רכיב שאינו מתאים לבדיקת ${t.type}`, 'להתאים סוג בדיקה (התנגדות/דיודה) לרכיבים במסלול');
       } else {
-        add('END_TO_END_REVIEW', t.id, `מסלול: ${na.path.map(e => e.id).join(' → ')}. מקטעים מוכחים: ${na.necessary.map(e => e.id).join(', ') || 'אין'}`, 'לבדוק התאמה, גבולות וראיות לכל דרישה');
+        // a plain wire path through splices with no parallel branch is routine; anything else needs review
+        const routine = !na.optional.length && na.path.every(e => CONDUCTIVE.has(e.kind));
+        add(routine ? 'END_TO_END_SPLICE' : 'END_TO_END_REVIEW', t.id, `מסלול: ${na.path.map(e => e.id).join(' → ')}. מקטעים מוכחים: ${na.necessary.map(e => e.id).join(', ') || 'אין'}`, routine ? 'אין — מסלול חוטים דרך פיצול' : 'לבדוק התאמה, גבולות וראיות לכל דרישה');
         const diodeOk = t.type !== 'diode' || na.necessary.some(e => e.kind === 'diode' && t.direction && t.direction === e.forward);
         for (const e of na.necessary) indirect.get(e.id).push({ test: t.id, valid: ev.valid && diodeOk, path: na.path.map(x => x.id) });
         for (const e of na.optional) {
