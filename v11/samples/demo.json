@@ -1,0 +1,71 @@
+{
+  "_note": "SYNTHETIC DEMO DATA — based on the v10.6 demo, extended for v11 (mechanical pins, parallel wires, isolation tests).",
+  "drawing": {
+    "revision": "C", "approved_source": false, "source_id": "SYNTH-DRAW-C",
+    "edges": [
+      {"id":"E01","a":"J1:1","b":"J2:1","kind":"wire","net":"NET-A"},
+      {"id":"E02","a":"J1:2","b":"SPL:1","kind":"wire","net":"NET-B"},
+      {"id":"E03","a":"SPL:1","b":"J2:2","kind":"wire","net":"NET-B"},
+      {"id":"E04","a":"SPL:1","b":"J3:2","kind":"wire","net":"NET-B"},
+      {"id":"E05","a":"SHIELD","b":"SHELL","kind":"shield","net":"NET-SH"},
+      {"id":"E06","a":"J2:4","b":"D:ANODE","kind":"wire","net":"NET-D"},
+      {"id":"E07","a":"D:ANODE","b":"D:CATHODE","kind":"diode","net":"NET-D","forward":"D:ANODE>D:CATHODE"},
+      {"id":"E08","a":"D:CATHODE","b":"J3:4","kind":"wire","net":"NET-D"},
+      {"id":"E09","a":"J4:1","b":"R1:A","kind":"wire","net":"NET-R"},
+      {"id":"E10","a":"R1:A","b":"R1:B","kind":"resistor","ohms":100,"net":"NET-R"},
+      {"id":"E11","a":"R1:B","b":"J4:2","kind":"wire","net":"NET-R"},
+      {"id":"E12","a":"J5:1","b":"SPL2:1","kind":"wire","net":"NET-P"},
+      {"id":"E13","a":"SPL2:1","b":"J5:2","kind":"wire","net":"NET-P"},
+      {"id":"E14","a":"SPL2:1","b":"J5:2","kind":"wire","net":"NET-P"},
+      {"id":"E15","a":"J3:3","b":"J4:3","kind":"wire","net":"NET-E"}
+    ]
+  },
+  "mechanical": {
+    "revision": "C", "approved_source": false, "source_id": "SYNTH-MECH-C",
+    "connectors": [
+      {"id":"J1","pins":["1","2","3"]},
+      {"id":"J2","pins":["1","2","3","4"]},
+      {"id":"J3","pins":["1","2","3","4"]},
+      {"id":"J4","pins":["1","2","3"]},
+      {"id":"J5","pins":["1","2"]}
+    ]
+  },
+  "atp": {
+    "revision": "B", "approved_source": false, "source_id": "SYNTH-ATP-B",
+    "defaults": {"continuity_max": 1, "continuity_unit": "ohm", "isolation_min": 100, "isolation_unit": "Mohm", "isolation_required": true},
+    "tests": [
+      {"id":"T01","a":"J1:1","b":"J2:1","type":"continuity","purpose":"segment"},
+      {"id":"T02","a":"J1:2","b":"SPL:1","type":"continuity","purpose":"segment"},
+      {"id":"T03","a":"SPL:1","b":"J2:2","type":"continuity","purpose":"segment"},
+      {"id":"T03B","a":"J2:2","b":"SPL:1","type":"continuity","purpose":"segment","duplicate_reason":"בדיקת אימות חוזרת מאושרת בתוכנית הדגמה"},
+      {"id":"T04","a":"J1:2","b":"J3:2","type":"continuity","purpose":"end_to_end"},
+      {"id":"T05","a":"SHIELD","b":"SHELL","type":"continuity","purpose":"segment"},
+      {"id":"T06","a":"J2:4","b":"J3:4","type":"continuity","purpose":"end_to_end"},
+      {"id":"T07","a":"J4:1","b":"J4:2","type":"resistance","purpose":"end_to_end","min":95,"max":105,"unit":"ohm"},
+      {"id":"T08","a":"J1:1","b":"J2:1","type":"continuity","purpose":"segment"},
+      {"id":"T09","a":"J5:1","b":"J5:2","type":"continuity","purpose":"end_to_end"},
+      {"id":"T20","a":"J1:1","b":"*","type":"isolation"},
+      {"id":"T21","a":"J2:4","b":"J4:1","type":"isolation"},
+      {"id":"T99","a":"GHOST:1","b":"GHOST:2","type":"continuity","purpose":"segment"}
+    ]
+  },
+  "results": {
+    "revision": "B", "approved_source": false, "source_id": "SYNTH-RESULTS-B",
+    "measurements": [
+      {"test_id":"T01","value":0.2,"unit":"ohm","evidence_ref":"SYNTH-M01"},
+      {"test_id":"T02","value":0.2,"unit":"ohm","evidence_ref":"SYNTH-M02"},
+      {"test_id":"T03","value":0.2,"unit":"ohm","evidence_ref":"SYNTH-M03"},
+      {"test_id":"T03B","value":0.2,"unit":"ohm","evidence_ref":"SYNTH-M03B"},
+      {"test_id":"T04","value":0.3,"unit":"ohm","evidence_ref":"SYNTH-M04"},
+      {"test_id":"T05","value":0.3,"unit":"ohm","evidence_ref":"SYNTH-M05"},
+      {"test_id":"T06","status":"PASS","evidence_ref":"SYNTH-M06"},
+      {"test_id":"T07","value":110,"unit":"ohm","status":"PASS","evidence_ref":"SYNTH-M07"},
+      {"test_id":"T08","value":0.2,"unit":"ohm","evidence_ref":"SYNTH-M08"},
+      {"test_id":"T09","value":0.1,"unit":"ohm","evidence_ref":"SYNTH-M09"},
+      {"test_id":"T20","value":500,"unit":"Mohm","evidence_ref":"SYNTH-M20"},
+      {"test_id":"T21","value":0.2,"unit":"Gohm","evidence_ref":"SYNTH-M21"},
+      {"test_id":"T50","value":0.2,"unit":"ohm","evidence_ref":"SYNTH-M50"},
+      {"test_id":"T99","status":"PASS","evidence_ref":"SYNTH-M99"}
+    ]
+  }
+}

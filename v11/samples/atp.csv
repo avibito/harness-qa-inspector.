@@ -1,0 +1,22 @@
+#revision=B
+#source_id=SYNTH-ATP-B
+#approved_source=false
+#defaults.continuity_max=1
+#defaults.continuity_unit=ohm
+#defaults.isolation_min=100
+#defaults.isolation_unit=Mohm
+#defaults.isolation_required=true
+id,a,b,type,purpose,min,max,unit,direction,duplicate_reason
+T01,J1:1,J2:1,continuity,segment,,,,,
+T02,J1:2,SPL:1,continuity,segment,,,,,
+T03,SPL:1,J2:2,continuity,segment,,,,,
+T03B,J2:2,SPL:1,continuity,segment,,,,,בדיקת אימות חוזרת מאושרת בתוכנית הדגמה
+T04,J1:2,J3:2,continuity,end_to_end,,,,,
+T05,SHIELD,SHELL,continuity,segment,,,,,
+T06,J2:4,J3:4,continuity,end_to_end,,,,,
+T07,J4:1,J4:2,resistance,end_to_end,95,105,ohm,,
+T08,J1:1,J2:1,continuity,segment,,,,,
+T09,J5:1,J5:2,continuity,end_to_end,,,,,
+T20,J1:1,*,isolation,,,,,,
+T21,J2:4,J4:1,isolation,,,,,,
+T99,GHOST:1,GHOST:2,continuity,segment,,,,,

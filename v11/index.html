@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Harness QA Inspector v11 — בדיקת שלמות כיסוי</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#eaf1f5;color:#263d4e;font:16px Arial,sans-serif;line-height:1.55}
+.wrap{max-width:980px;margin:auto;padding:14px}
+section{background:#fff;border-radius:20px;padding:20px;margin:14px 0;box-shadow:0 4px 15px #19374614}
+h1{font-size:25px;margin:0 0 6px}h2{font-size:21px;margin-top:0}h3{font-size:17px;margin:16px 0 6px}
+button,.btn{background:#146080;color:#fff;border:0;border-radius:11px;padding:12px 16px;font-weight:bold;font-size:15px;cursor:pointer;margin:4px 0 4px 6px;display:inline-block}
+button.secondary,.btn.secondary{background:#667d89}
+.note{background:#fff1d0;border-right:5px solid #b68b20;padding:11px;border-radius:8px}
+.warn{background:#ffe7ea;border-right:5px solid #b43750;padding:12px;border-radius:8px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:9px;margin:10px 0}
+.metric{background:#e8f0f5;text-align:center;border-radius:12px;padding:10px;font-size:14px}
+.metric strong{font-size:28px;display:block}
+.metric.gap strong{color:#b43750}.metric.ok strong{color:#138265}.metric.rev strong{color:#a87a10}
+textarea{width:100%;height:150px;direction:ltr;text-align:left;font:12px monospace;border:1px solid #bdcbd2;border-radius:9px;padding:8px}
+.src{border:1px solid #d3dde4;border-radius:12px;padding:10px;margin:10px 0}
+.src header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px}
+.src label.btn{font-size:13px;padding:8px 11px}
+.src small{color:#667d89}
+.verdict{border-radius:14px;padding:16px;margin:8px 0;color:#fff}
+.verdict b{font-size:22px;display:block}
+.v-INCOMPLETE{background:#b43750}.v-BLOCKED{background:#a8580f}.v-COMPLETE_PENDING_ENGINEERING_REVIEW{background:#1d7a5c}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.chip{direction:ltr;background:#ffe7ea;color:#8d2236;border-radius:20px;padding:3px 11px;font:13px monospace;font-weight:bold}
+.chip.mid{background:#fff1d0;color:#7a5a08}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid #d3dde4;padding:6px;text-align:right;vertical-align:top}
+th{background:#e5eef4;position:sticky;top:0}
+td.ltr{direction:ltr;text-align:left;font-family:monospace}
+.scroll{overflow:auto;max-height:460px}
+.st{font-weight:bold;white-space:nowrap}
+.st-DIRECT_EVIDENCE,.st-TESTED,.st-ISOLATION_TESTED,.st-SPARE_ISOLATION_TESTED{color:#138265}
+.st-INDIRECT_COVERAGE{color:#14607f}
+.st-ENGINEERING_REVIEW,.st-TESTED_NO_VALID_EVIDENCE,.st-SPARE_ISOLATION_PARTIAL{color:#a87a10}
+.st-COVERAGE_GAP,.st-UNTESTED,.st-SPARE_UNTESTED,.st-ISOLATION_GAP{color:#b43750}
+details{background:#f6f8fa;padding:11px;border-radius:12px;margin:8px 0}
+summary{cursor:pointer;font-weight:bold}
+.f{border-right:4px solid #9aaebc;background:#fff;padding:7px 10px;margin:6px 0;border-radius:6px;font-size:14px}
+.f.blocker{border-right-color:#b43750}.f.gap{border-right-color:#d06a1c}.f.review{border-right-color:#b68b20}.f.info{border-right-color:#9aaebc}
+.f code{direction:ltr;unicode-bidi:isolate;font-size:12px;color:#526878}
+.f small{display:block;color:#526878}
+#msg{font-weight:bold}
+.filter{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0;font-size:14px}
+footer{text-align:center;color:#667d89;padding:18px;font-size:12px}
+@media(max-width:480px){section{padding:14px}.wrap{padding:8px}h1{font-size:21px}textarea{height:120px}}
+</style>
+</head>
+<body>
+<main class="wrap">
+
+<section>
+  <h1>Harness QA Inspector — v11</h1>
+  <p>האם הבדיקה במכשיר כיסתה את כל מה שהשרטוט החשמלי והמכני מחייבים? המערכת מצביעה על מקטעים, פינים וזוגות רשתות <b>שלא נבדקו</b>.</p>
+  <div class="note">מערכת חדשה, נפרדת מ־v5.0 ומ־v10.x (שלא שונו). אין במערכת אישור שחרור — רק סיווג ראיות ופערים לסקירה הנדסית.</div>
+  <p>
+    <button onclick="runAudit()">בצע ביקורת כיסוי</button>
+    <button class="secondary" onclick="loadDemo()">טען הדגמה</button>
+  </p>
+  <p id="msg" role="status" aria-live="polite"></p>
+</section>
+
+<section>
+  <h2>1. מקורות</h2>
+  <p><small>כל מקור מתקבל כ־JSON או CSV (שורה ראשונה כותרות; מטא־דאטה בשורות <code dir="ltr">#revision=B</code>). ניתן להדביק או לטעון קובץ.</small></p>
+  <div id="sources"></div>
+</section>
+
+<section id="verdictSec" hidden>
+  <h2>2. הכרעה</h2>
+  <div id="verdict"></div>
+  <div id="cards" class="cards"></div>
+  <p>
+    <button class="secondary" onclick="exportJSON()">ייצא דוח JSON</button>
+    <button class="secondary" onclick="exportCSV()">ייצא ממצאים CSV</button>
+  </p>
+</section>
+
+<section id="pointsSec" hidden>
+  <h2>3. כיסוי נקודות (פינים)</h2>
+  <p><small>כל פין במחברים לפי השרטוט החשמלי והמכני. "נבדק" = נגעה בו בדיקת רציפות/התנגדות/דיודה עם ראיה תקפה.</small></p>
+  <div class="filter"><label><input type="checkbox" id="ptGapsOnly" onchange="renderPoints()"> הצג רק פערים</label></div>
+  <div class="scroll" id="points"></div>
+</section>
+
+<section id="matrixSec" hidden>
+  <h2>4. כיסוי מקטעים</h2>
+  <p><small>מקטע מקבל כיסוי עקיף רק אם הוא <b>הכרחי</b> במסלול המדידה — מקטע במסלול מקביל אינו מוכח.</small></p>
+  <div class="filter"><label><input type="checkbox" id="mxGapsOnly" onchange="renderMatrix()"> הצג רק פערים וסקירה</label></div>
+  <div class="scroll" id="matrix"></div>
+</section>
+
+<section id="isoSec" hidden>
+  <h2>5. בידוד בין רשתות</h2>
+  <div id="iso"></div>
+</section>
+
+<section id="findSec" hidden>
+  <h2>6. ממצאים</h2>
+  <div id="findings"></div>
+</section>
+
+<section id="revalSec" hidden>
+  <h2>7. ביקורת חוזרת</h2>
+  <div class="note">שמור ביקורת בסיס, עדכן תוצאות (לאחר תיקון), והשווה. היעלמות ממצא אינה סגירה — נדרש אימות ידני.</div>
+  <p>
+    <button onclick="saveBaseline()">שמור ביקורת בסיס</button>
+    <button onclick="compareNow()">השווה לבסיס</button>
+    <button class="secondary" onclick="demoRepair()">הדגמה: תיקון T07</button>
+  </p>
+  <p id="baseInfo"></p>
+  <div id="delta"></div>
+</section>
+
+<section>
+  <h2>מגבלות</h2>
+  <p>מדידה מקצה לקצה מוכיחה רק מקטעים שהכרחיים במסלול, ואינה מוכיחה מיקום רכיב או הרכבה פיזית. בדיקת דיודה מחייבת סוג, כיוון וגבולות. הנטליסט מוזן ידנית — אין חילוץ אוטומטי משרטוט. הכלי אינו מחליף ATP מאושר, שרטוט מאושר ובדיקה פיזית.</p>
+  <div class="warn"><b>NOT APPROVED FOR RELEASE</b> — הכרעת "כיסוי שלם" היא תנאי לסקירה הנדסית, לא אישור.</div>
+</section>
+
+<footer>v11.0 | ENGINEERING REVIEW REQUIRED | NOT APPROVED</footer>
+</main>
+
+<script src="engine.js"></script>
+<script>
+window.DEMO = window.DEMO || null; // filled in by the standalone build
+const E = window.HarnessEngine;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const store = {
+  get(k){ try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch(e) { return null; } },
+  set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch(e) { return false; } }
+};
+const K_SRC = 'harness_qa_v11_sources', K_BASE = 'harness_qa_v11_baseline';
+
+const SOURCES = [
+  ['drawing', 'שרטוט חשמלי — מקטעים', 'id,a,b,kind,net,ohms,forward'],
+  ['mechanical', 'שרטוט מכני — מחברים ופינים (רשות)', 'connector,pin'],
+  ['atp', 'תוכנית בדיקה (ATP)', 'id,a,b,type,purpose,min,max,unit,direction'],
+  ['results', 'תוצאות מכשיר הבדיקה', 'test_id,value,unit,status,evidence_ref']
+];
+const LABEL = {
+  DIRECT_EVIDENCE:'ראיה ישירה', INDIRECT_COVERAGE:'כיסוי עקיף', ENGINEERING_REVIEW:'לסקירה', COVERAGE_GAP:'לא נבדק',
+  TESTED:'נבדק', TESTED_NO_VALID_EVIDENCE:'נבדק — ללא ראיה תקפה', UNTESTED:'לא נבדק',
+  SPARE_ISOLATION_TESTED:'רזרבי — בידוד מלא', SPARE_ISOLATION_PARTIAL:'רזרבי — בידוד חלקי', SPARE_UNTESTED:'רזרבי — לא נבדק', SPARE_NOT_REQUIRED:'רזרבי',
+  ISOLATION_TESTED:'נבדק', ISOLATION_GAP:'לא נבדק',
+  INCOMPLETE:'הבדיקה לא בוצעה במלואה', BLOCKED:'כיסוי שלם — קיימים חסמים', COMPLETE_PENDING_ENGINEERING_REVIEW:'כיסוי שלם — ממתין לסקירה הנדסית'
+};
+const SEV = { blocker:'חסמים ואי־התאמות', gap:'פערי כיסוי — לא נבדק', review:'לסקירה הנדסית', info:'מידע' };
+let report = null, baseline = store.get(K_BASE);
+
+// ---- sources UI ----
+$('sources').innerHTML = SOURCES.map(([k, title, cols]) => `
+  <div class="src"><header><b>${esc(title)}</b>
+  <label class="btn secondary">טען קובץ<input type="file" accept=".json,.csv,.txt,text/csv,application/json" hidden onchange="loadFile('${k}',this)"></label></header>
+  <small dir="ltr">CSV: ${esc(cols)}</small>
+  <textarea id="src_${k}" spellcheck="false" placeholder="JSON או CSV"></textarea></div>`).join('');
+
+async function loadFile(k, input){
+  const f = input.files && input.files[0]; if(!f) return;
+  $('src_' + k).value = await f.text(); input.value = '';
+  $('msg').textContent = 'נטען: ' + f.name + ' — יש לבצע ביקורת מחדש';
+}
+const values = () => Object.fromEntries(SOURCES.map(([k]) => [k, $('src_' + k).value]));
+
+async function getDemo(){
+  if (window.DEMO) return window.DEMO;
+  const r = await fetch('samples/demo.json'); if(!r.ok) throw Error('לא ניתן לטעון הדגמה'); return r.json();
+}
+async function loadDemo(){
+  try {
+    const d = await getDemo();
+    if (Object.values(values()).some(v => v.trim()) && !confirm('להחליף את המקורות הנוכחיים בנתוני הדגמה?')) return;
+    for (const [k] of SOURCES) $('src_' + k).value = d[k] ? JSON.stringify(d[k], null, 2) : '';
+    runAudit();
+  } catch(e) { $('msg').textContent = e.message; }
+}
+
+// ---- audit ----
+function runAudit(){
+  const v = values();
+  try {
+    report = E.audit({ drawing: v.drawing, mechanical: v.mechanical.trim() ? v.mechanical : null, atp: v.atp, results: v.results });
+  } catch(e) { report = null; $('msg').textContent = 'שגיאה בנתונים: ' + e.message; return; }
+  store.set(K_SRC, v);
+  $('msg').textContent = 'הביקורת הושלמה. אין אישור שחרור.';
+  ['verdictSec','pointsSec','matrixSec','isoSec','findSec','revalSec'].forEach(id => $(id).hidden = false);
+  renderVerdict(); renderPoints(); renderMatrix(); renderIso(); renderFindings(); renderBaseInfo();
+}
+
+function renderVerdict(){
+  const v = report.verdict, s = report.summary;
+  const chips = (arr, cls='') => arr.length ? `<div class="chips">${arr.map(x => `<span class="chip ${cls}">${esc(x)}</span>`).join('')}</div>` : '';
+  $('verdict').innerHTML = `<div class="verdict v-${v.status}"><b>${esc(LABEL[v.status])}</b>${esc(v.note)}</div>
+    ${v.untested_points.length ? `<h3>נקודות שלא נבדקו כלל (${v.untested_points.length})</h3>${chips(v.untested_points)}` : ''}
+    ${v.coverage_gap_edges.length ? `<h3>מקטעים ללא ראיית כיסוי (${v.coverage_gap_edges.length})</h3>${chips(v.coverage_gap_edges)}` : ''}
+    ${v.missing_results.length ? `<h3>בדיקות ATP ללא תוצאה (${v.missing_results.length})</h3>${chips(v.missing_results)}` : ''}
+    ${v.partially_tested_spares.length ? `<h3>פינים רזרביים עם בידוד חלקי (${v.partially_tested_spares.length})</h3>${chips(v.partially_tested_spares,'mid')}` : ''}`;
+  const m = (n, l, c='') => `<div class="metric ${c}"><strong>${n}</strong>${l}</div>`;
+  $('cards').innerHTML = [
+    m(`${s.points_tested}/${s.points}`, 'פינים נבדקו', s.points_untested ? 'gap' : 'ok'),
+    m(s.points_untested, 'פינים לא נבדקו', s.points_untested ? 'gap' : 'ok'),
+    m(`${s.direct_evidence + s.indirect_coverage}/${s.edges}`, 'מקטעים מכוסים', s.coverage_gap ? 'gap' : 'ok'),
+    m(s.coverage_gap, 'מקטעים לא נבדקו', s.coverage_gap ? 'gap' : 'ok'),
+    m(s.engineering_review, 'מקטעים לסקירה', s.engineering_review ? 'rev' : 'ok'),
+    m(`${s.net_pairs - s.isolation_gaps}/${s.net_pairs}`, 'זוגות בידוד נבדקו', s.isolation_gaps ? 'gap' : 'ok'),
+    m(s.by_severity.blocker || 0, 'חסמים', s.by_severity.blocker ? 'gap' : 'ok'),
+    m(0, 'מאושרים לשחרור')
+  ].join('');
+}
+
+function renderPoints(){
+  if(!report) return;
+  const only = $('ptGapsOnly').checked;
+  const rows = report.points.filter(p => !only || !['TESTED','SPARE_ISOLATION_TESTED'].includes(p.state));
+  $('points').innerHTML = rows.length ? `<table><thead><tr><th>פין</th><th>רשת</th><th>מצב</th><th>בדיקות</th></tr></thead><tbody>${rows.map(p =>
+    `<tr><td class="ltr">${esc(p.point)}</td><td class="ltr">${esc(p.net)}</td><td class="st st-${p.state}">${esc(LABEL[p.state] || p.state)}</td><td class="ltr">${esc(p.tests.join(', ') || '—')}</td></tr>`).join('')}</tbody></table>` : '<p>אין פערים בכיסוי פינים.</p>';
+}
+
+function renderMatrix(){
+  if(!report) return;
+  const only = $('mxGapsOnly').checked;
+  const rows = report.matrix.filter(x => !only || ['COVERAGE_GAP','ENGINEERING_REVIEW'].includes(x.state));
+  $('matrix').innerHTML = `<table><thead><tr><th>מקטע</th><th>נקודות</th><th>סוג</th><th>ישיר</th><th>עקיף</th><th>מצב</th><th>הסבר</th></tr></thead><tbody>${rows.map(x =>
+    `<tr><td class="ltr">${esc(x.edge)}</td><td class="ltr">${esc(x.a)} ↔ ${esc(x.b)}</td><td>${esc(x.kind)}</td><td class="ltr">${esc(x.direct_tests.join(', ') || '—')}</td><td class="ltr">${esc(x.indirect_tests.join(', ') || '—')}</td><td class="st st-${x.state}">${esc(LABEL[x.state])}</td><td>${esc(x.reason)}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function renderIso(){
+  const iso = report.isolation, gaps = iso.filter(x => x.state === 'ISOLATION_GAP');
+  if(!iso.length){ $('iso').innerHTML = '<p>לא נדרשה בדיקת בידוד (isolation_required=false) או שאין רשתות נגישות.</p>'; return; }
+  const nets = [...new Set(iso.flatMap(x => [x.net_a, x.net_b]))];
+  const cell = (a,b) => { if(a===b) return '<td style="background:#e5eef4"></td>'; const p = iso.find(x => (x.net_a===a&&x.net_b===b)||(x.net_a===b&&x.net_b===a)); return `<td title="${esc(p.test||'')}" style="text-align:center;color:${p.test?'#138265':'#b43750'}">${p.test?'✓':'✗'}</td>`; };
+  $('iso').innerHTML = `<p><b>${iso.length - gaps.length}/${iso.length}</b> זוגות רשתות נבדקו לבידוד. ✗ = לא נבדק.</p>
+    <div class="scroll"><table><thead><tr><th></th>${nets.map(n => `<th class="ltr" style="writing-mode:vertical-rl">${esc(n)}</th>`).join('')}</tr></thead><tbody>
+    ${nets.map(a => `<tr><th class="ltr">${esc(a)}</th>${nets.map(b => cell(a,b)).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+
+function renderFindings(){
+  const by = {}; for (const f of report.findings) (by[f.severity] = by[f.severity] || []).push(f);
+  $('findings').innerHTML = ['blocker','gap','review','info'].filter(s => by[s]).map((s, i) =>
+    `<details ${i===0?'open':''}><summary>${esc(SEV[s])} (${by[s].length})</summary>${by[s].map(f =>
+      `<div class="f ${s}"><b dir="ltr">${esc(f.subject)}</b> — ${esc(f.detail)}<small>פעולה: ${esc(f.action)}</small><code>${esc(f.id)} · ${esc(f.code)}</code></div>`).join('')}</details>`).join('');
+}
+
+// ---- exports ----
+function download(name, text, type){
+  const u = URL.createObjectURL(new Blob([text], {type})); const a = document.createElement('a');
+  a.href = u; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(u), 1000);
+}
+const stamp = () => new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+function exportJSON(){ if(report) download(`harness_qa_v11_report_${stamp()}.json`, JSON.stringify(report, null, 2), 'application/json'); }
+function exportCSV(){
+  if(!report) return;
+  const q = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
+  const rows = [['id','severity','code','subject','detail','action'], ...report.findings.map(f => [f.id,f.severity,f.code,f.subject,f.detail,f.action])];
+  download(`harness_qa_v11_findings_${stamp()}.csv`, '﻿' + rows.map(r => r.map(q).join(',')).join('\r\n'), 'text/csv');
+}
+
+// ---- revalidation ----
+function renderBaseInfo(){
+  $('baseInfo').textContent = baseline ? `בסיס שמור: ${new Date(baseline.generated_at).toLocaleString('he-IL',{dateStyle:'short',timeStyle:'short'})} — ${baseline.findings.length} ממצאים, ${LABEL[baseline.verdict.status]}` : 'אין ביקורת בסיס שמורה.';
+}
+function saveBaseline(){
+  if(!report) return;
+  if(baseline && !confirm('להחליף את ביקורת הבסיס?')) return;
+  baseline = JSON.parse(JSON.stringify(report));
+  if(!store.set(K_BASE, baseline)) alert('שמירה מקומית נכשלה — הבסיס יישמר רק עד רענון הדף');
+  $('delta').innerHTML = ''; renderBaseInfo();
+}
+function compareNow(){
+  if(!baseline){ alert('יש לשמור ביקורת בסיס תחילה'); return; }
+  runAudit(); if(!report) return;
+  const c = E.compareAudits(baseline, report);
+  const names = { PERSISTENT:'עדיין קיים', ABSENT_REVIEW_REQUIRED:'נעלם — נדרש אימות', NEW:'חדש', AMBIGUOUS_REVIEW:'זיהוי לא חד־משמעי' };
+  $('delta').innerHTML = `${c.structure_changed ? '<div class="warn">מבנה השרטוט השתנה — ההשוואה אינה מספיקה, נדרשת ביקורת הנדסית מלאה.</div>' : ''}
+    <p>הכרעה: <b>${esc(LABEL[c.verdict_before])}</b> ← <b>${esc(LABEL[c.verdict_after])}</b></p>
+    <div class="cards">${Object.keys(names).map(k => `<div class="metric"><strong>${c.counts[k] || 0}</strong>${names[k]}</div>`).join('')}</div>
+    ${c.coverage_changes.length ? `<h3>שינויי כיסוי מקטעים</h3>${c.coverage_changes.map(x => `<div class="f"><b dir="ltr">${esc(x.edge)}</b>: ${esc(LABEL[x.before]||'לא קיים')} ← ${esc(LABEL[x.after]||'לא קיים')}</div>`).join('')}` : ''}
+    ${['ABSENT_REVIEW_REQUIRED','NEW'].map(st => { const rs = c.rows.filter(r => r.status === st); return rs.length ? `<details><summary>${names[st]} (${rs.length})</summary>${rs.map(r => { const f = r.before || r.after[0]; return `<div class="f"><b dir="ltr">${esc(f.subject)}</b> — ${esc(f.detail)}<code>${esc(f.code)}</code></div>`; }).join('')}</details>` : ''; }).join('')}
+    <p><small>${esc(c.note)}</small></p>`;
+}
+async function demoRepair(){
+  if(!baseline){ alert('שמור תחילה ביקורת בסיס'); return; }
+  try {
+    const r = JSON.parse(JSON.stringify((await getDemo()).results));
+    const m = r.measurements.find(x => x.test_id === 'T07'); m.value = 100; m.evidence_ref = 'SYNTH-RETEST-T07';
+    $('src_results').value = JSON.stringify(r, null, 2);
+    compareNow();
+  } catch(e) { $('msg').textContent = e.message; }
+}
+
+// ---- boot: restore last audited sources, otherwise demo ----
+(function boot(){
+  const saved = store.get(K_SRC);
+  if (saved && Object.values(saved).some(v => String(v).trim())) {
+    for (const [k] of SOURCES) $('src_' + k).value = saved[k] || '';
+    runAudit(); $('msg').textContent = 'שוחזרו המקורות של הביקורת האחרונה. ' + $('msg').textContent;
+  } else loadDemo();
+})();
+</script>
+</body>
+</html>
