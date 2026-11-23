@@ -57,6 +57,10 @@ tr.click{cursor:pointer}tr.click:hover{background:var(--chip)}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:10px;margin:12px 0}
 .kpi{background:var(--chip);border-radius:10px;padding:10px 12px}.kpi strong{display:block;font-size:26px;line-height:1.1}
 .find{border-inline-start:4px solid var(--line);padding:8px 12px;margin:6px 0;background:var(--chip);border-radius:6px}
+.split{display:grid;gap:16px}@media(min-width:1000px){.split{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.split>.panel{margin:0}}
+.sheetbox{--z:180;height:min(72vh,680px);overflow:auto;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:grab;touch-action:none;margin-top:8px}.sheetbox canvas{display:block;width:calc(var(--z) * 1%);height:auto;margin-bottom:10px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;align-items:center}.chip{font:500 13px 'IBM Plex Mono',monospace;min-height:32px;padding:3px 10px;border-radius:16px;background:var(--chip);color:var(--ink);border:1px solid var(--line)}.chip.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.addnet{background:var(--chip);border-radius:10px;padding:10px 12px;margin-bottom:10px}
 .crit{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:10px 0}.crit h3{margin:0;display:flex;gap:8px;align-items:center}.crit .why{margin:2px 0 6px}
 .item{border-top:1px dashed var(--line);padding:8px 0}.item textarea{min-height:64px}.dec{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
 .stamp{display:inline-block;border:3px solid currentColor;border-radius:8px;padding:6px 14px;font-weight:800;font-size:20px;transform:rotate(-3deg)}
@@ -81,7 +85,7 @@ dialog::backdrop{background:#0007}
 <header><div class="bar">
   <div class="brand"><i></i>בדיקת רתמות</div>
   <nav id="nav">
-    <a href="#home">ראשי</a><a href="#run">בדיקה חדשה</a><a href="#programs">אישור תוכניות</a><a href="#netlists">נטליסטים</a><a href="#findings">ממצאים</a><a href="#history">היסטוריה</a>
+    <a href="#home">ראשי</a><a href="#run">בדיקה חדשה</a><a href="#programs">אישור תוכניות</a><a href="#netlists">נטליסטים</a><a href="#findings">ממצאים</a><a href="#history">היסטוריה</a><a href="#team" id="teamLink" hidden>צוות</a>
   </nav>
   <span id="who"></span>
 </div></header>
@@ -89,6 +93,7 @@ dialog::backdrop{background:#0007}
 <dialog id="dlg"><form method="dialog" id="dlgForm"><h2 id="dlgTitle"></h2><div id="dlgBody"></div><div class="row" style="margin-top:14px"><button value="ok" class="acc" id="dlgOk">אישור</button><button value="cancel" class="ghost">ביטול</button></div></form></dialog>
 <script src="lib/pdf.min.js"></script>
 <script src="engine.js"></script>
+<script src="store-folder.js"></script>
 <script src="adapters.js"></script>
 <script src="program.js"></script>
 <script src="app.js"></script>

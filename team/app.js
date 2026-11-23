@@ -42,15 +42,18 @@ const nameOf = id => id ? (S.names[id] || 'משתמש') : '—';
 // ---------------- data layer (shared db, or in-memory fallback) ----------------
 const mem = { netlists: new Map(), runs: new Map(), runData: new Map(), cases: new Map(), programs: new Map(), requirements: new Map() };
 async function put(col, id, data) {
+  if (S.fs) { await S.fs.put(col, id, data); return; }
   if (S.db) { await S.db.doc(col + '/' + id).set(data); }
   else { mem[col].set(id, data); refreshLocal(); }
 }
 async function patch(col, id, data) {
+  if (S.fs) { await S.fs.patch(col, id, data); return; }
   if (S.db) await S.db.doc(col + '/' + id).update(data);
   else { mem[col].set(id, deepMerge(mem[col].get(id) || {}, data)); refreshLocal(); }
 }
 function deepMerge(a, b) { const o = { ...a }; for (const [k, v] of Object.entries(b)) o[k] = v && typeof v === 'object' && !Array.isArray(v) && a[k] && typeof a[k] === 'object' && !Array.isArray(a[k]) ? deepMerge(a[k], v) : v; return o; }
 async function getDoc(col, id) {
+  if (S.fs) return S.fs.get(col, id);
   if (S.db) { const s = await S.db.doc(col + '/' + id).get(); return s.exists ? s.data() : null; }
   return mem[col].get(id) || null;
 }
@@ -60,6 +63,14 @@ function refreshLocal() {
   S.cases = [...mem.cases].map(([id, d]) => ({ id, ...d }));
   S.programs = [...mem.programs].map(([id, d]) => ({ id, ...d }));
   liveRender();
+}
+const SORTS = { netlists: (a, b) => (a.pn + a.rev).localeCompare(b.pn + b.rev), runs: (a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''),
+  programs: (a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''), cases: (a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '') };
+function subscribeFolder() {
+  for (const col of ['netlists', 'runs', 'programs', 'cases']) S.fs.watch(col, (rows, err) => {
+    if (err) { toast('לא ניתן לקרוא מהתיקייה המשותפת: ' + (err.message || err.name)); return; }
+    S[col] = rows.sort(SORTS[col]); liveRender();
+  });
 }
 function subscribe() {
   const watch = (q, key, sort) => {
@@ -79,12 +90,14 @@ function subscribe() {
 
 // ---------------- routing ----------------
 const liveViews = new Set(['home', 'netlists', 'findings', 'history', 'programs']);
+S.mode = null;
 function route() {
+  if (S.mode === 'folder' && !S.me) return;
   const h = (location.hash || '#home').slice(1);
   const [v, ...rest] = h.split('-'); const arg = rest.join('-');
   for (const a of document.querySelectorAll('#nav a')) a.classList.toggle('on', a.getAttribute('href') === '#' + v || (v === 'program' && a.getAttribute('href') === '#programs') || (v === 'netlist' && a.getAttribute('href') === '#netlists'));
   S.view = v; S.arg = arg;
-  ({ home: vHome, run: arg ? vRunResult : vRunNew, netlists: vNetlists, netlist: vNetlistEdit, findings: vFindings, history: vHistory, programs: vPrograms, program: arg === 'new' ? vProgramNew : vProgram }[v] || vHome)(arg);
+  ({ home: vHome, run: arg ? vRunResult : vRunNew, netlists: vNetlists, netlist: vNetlistEdit, findings: vFindings, history: vHistory, programs: vPrograms, program: arg === 'new' ? vProgramNew : vProgram, team: vTeam }[v] || vHome)(arg);
   window.scrollTo(0, 0);
 }
 function liveRender() {
@@ -104,7 +117,7 @@ function vHome() {
   const last30 = S.runs.filter(r => Date.now() - new Date(r.createdAt) < 30 * 864e5).length;
   names(S.runs.slice(0, 12).map(r => r.createdBy)).then(() => S.view === 'home' && document.querySelectorAll('[data-uid]').forEach(e => e.textContent = nameOf(e.dataset.uid)));
   view(`
-  ${S.local ? '<div class="note err">אין חיבור למאגר המשותף בתצוגה זו — הנתונים יישמרו רק עד סגירת הדף.</div>' : ''}
+  ${S.local ? '<div class="note err">מצב ניסיון — אין חיבור למאגר משותף, והנתונים יימחקו כשסוגרים את הדף.</div>' : ''}${S.mode === 'folder' ? `<p class="small muted">תיקייה משותפת: <b>${esc(S.fs.name)}</b> · מתעדכן כל כמה שניות</p>` : ''}
   <h1>בדיקת שלמות כיסוי לרתמות</h1>
   <div class="panel"><div class="row" style="justify-content:space-between">
     <p style="margin:0;max-width:62ch">משווים דוח של מכשיר הבדיקה מול נטליסט מאומת של השרטוט, ומקבלים מה נבדק, מה לא נבדק כלל, ואילו רשתות אינן תואמות.</p>
@@ -160,20 +173,28 @@ function vNetlistEdit(id) {
     <div><label for="rev">מהדורת שרטוט</label><input id="rev" value="${esc(n.rev)}"></div>
     <div><label for="title">כותרת / מספר שרטוט</label><input id="title" value="${esc(n.title)}"></div>
   </div></div>
-  <div class="panel" id="aiPanel"><h2>חילוץ מהשרטוט בעזרת Claude</h2>
-    <p class="small muted">מעלים PDF או צילום של השרטוט. כל גיליון נחתך לאריחים ו־Claude מתמלל את החיבורים. התוצאה היא טיוטה — חובה לאשר כל רשת מול השרטוט.</p>
-    <div class="grid">
-      <div><label for="drawFile">קובץ שרטוט (PDF / PNG / JPG)</label><input type="file" id="drawFile" accept=".pdf,image/png,image/jpeg"></div>
-      <div><label for="rot">סיבוב</label><select id="rot"><option value="0">ללא</option><option value="90">90° עם כיוון השעון</option><option value="270">90° נגד כיוון השעון</option><option value="180">180°</option></select></div>
-      <div><label for="hint">הערה ל־Claude (רשות)</label><input id="hint" placeholder="למשל: E = פיצול, BK = גוף המחבר"></div>
+  <div class="split">
+  <div class="panel" id="drawPanel"><h2>שרטוט</h2>
+    <div class="row">
+      <input type="file" id="drawFile" accept=".pdf,image/png,image/jpeg" aria-label="קובץ שרטוט" style="max-width:260px">
+      <select id="rot" aria-label="סיבוב" style="max-width:170px"><option value="0">ללא סיבוב</option><option value="90">90° עם השעון</option><option value="270">90° נגד השעון</option><option value="180">180°</option></select>
+      <label class="small" style="display:flex;gap:6px;align-items:center;margin:0">זום<input type="range" id="zoom" min="40" max="400" value="180" style="min-height:0;width:140px"></label>
     </div>
-    <div class="thumbs" id="thumbs"></div>
-    <div class="row"><button id="aiGo" class="acc" disabled>חלץ נטליסט</button><button id="aiStop" class="ghost" hidden>עצור</button><span id="aiStatus" class="small muted"></span></div>
+    <div id="drawMsg" class="small muted"></div>
+    <div id="sheetBox" class="sheetbox"><div class="empty">טענו את השרטוט כדי לעבוד מולו.</div></div>
+    <div id="aiPanel"></div>
   </div>
   <div class="panel"><h2>נטליסט</h2>
+    <div class="addnet"><div class="grid" style="grid-template-columns:minmax(0,1fr) minmax(0,2fr)">
+      <div><label for="anName">שם רשת / פיצול</label><input id="anName" class="mono" placeholder="E28"></div>
+      <div><label for="anPin">נקודה (Enter להוספה)</label><input id="anPin" class="mono" list="pinList" placeholder="JU1-27" autocomplete="off"><datalist id="pinList"></datalist></div></div>
+      <div id="anChips" class="chips"></div>
+      <div class="row"><button class="ghost" id="anAdd" disabled>הוסף רשת לנטליסט</button><span id="anMsg" class="small muted"></span></div></div>
     <details><summary>פורמט</summary><pre class="mono small" style="white-space:pre-wrap">${esc(NLF_HELP)}</pre></details>
     <textarea id="nlf" class="code" spellcheck="false">${esc(n.text)}</textarea>
-    <div id="parseInfo" class="small"></div></div>
+    <div id="parseInfo" class="small"></div>
+    <div id="unassigned"></div></div>
+  </div>
   <div class="panel"><h2>אימות מול השרטוט</h2>
     <p class="small muted">סמנו כל רשת אחרי שבדקתם אותה בשרטוט. סימון "מאומת" אפשרי רק כשכל הרשתות סומנו, ונרשם על שמכם.</p>
     <div class="row"><button class="ghost" id="checkAll">סמן הכל</button><span id="checkCount" class="small"></span></div>
@@ -190,6 +211,13 @@ function vNetlistEdit(id) {
       ...nl.diodes.map(d => ({ k: 'D:' + d.name + d.a + d.k, t: `דיודה ${d.name}: ${d.a} → ${d.k}` })),
       ...nl.shields.map(s => ({ k: 'S:' + s.name + s.pin, t: `שילוד חד־צדדי ${s.name}: ${s.pin}` }))];
     ed.items = items;
+    const used = new Set([...nl.nets.flatMap(x => x.pins), ...nl.resistors.flatMap(r => [r.a, r.b]), ...nl.diodes.flatMap(d => [d.a, d.k]), ...nl.shields.map(x => x.pin)]);
+    const all = [...new Set([...Object.entries(nl.connectors).flatMap(([c, ps]) => ps.map(p => c + '-' + p)), ...used])].sort(H.pinCmp);
+    ed.used = used; $('#pinList').innerHTML = all.map(p => `<option value="${esc(p)}">`).join('');
+    const free = all.filter(p => !used.has(p)), byC = {};
+    for (const p of free) (byC[p.replace(/-[^-]*$/, '')] = byC[p.replace(/-[^-]*$/, '')] || []).push(p);
+    $('#unassigned').innerHTML = Object.keys(nl.connectors).length ? `<details ${free.length && free.length < 60 ? 'open' : ''}><summary>פינים שלא שויכו לאף רשת (${free.length})</summary><p class="small muted">ודאו בשרטוט שהם באמת פנויים. לחיצה מוסיפה לרשת שבעריכה.</p>${Object.entries(byC).map(([c, ps]) => `<div class="chips"><b class="small">${esc(c)}</b>${ps.map(p => `<button class="chip" data-pin="${esc(p)}">${esc(p.replace(/^.*-/, ''))}</button>`).join('')}</div>`).join('')}</details>`
+      : '<p class="small muted">הוסיפו שורות CONN (רשימת פינים לכל מחבר) כדי לקבל השלמה אוטומטית ורשימת פינים שלא שויכו.</p>';
     for (const k of [...ed.checks]) if (!items.some(i => i.k === k)) ed.checks.delete(k);
     $('#checklist').innerHTML = items.map((i, n) => `<label><input type="checkbox" data-k="${esc(i.k)}" ${ed.checks.has(i.k) ? 'checked' : ''}><span class="mono small">${esc(i.t)}</span></label>`).join('') || '<div class="muted">אין רשתות עדיין.</div>';
     updChecks();
@@ -200,6 +228,30 @@ function vNetlistEdit(id) {
     $('#saveVerified').disabled = !total || done < total || ed.parsed.errors.length > 0 || !$('#pn').value.trim() || !$('#rev').value.trim();
   };
   let tmr; $('#nlf').addEventListener('input', () => { clearTimeout(tmr); tmr = setTimeout(reparse, 300); });
+  // quick add-net
+  const chips = [];
+  const drawChips = () => {
+    $('#anChips').innerHTML = chips.map((p, i) => `<button class="chip on" data-rm="${i}" title="הסר">${esc(p)} ✕</button>`).join('');
+    $('#anAdd').disabled = !(chips.length >= 1 && $('#anName').value.trim());
+  };
+  const addPin = raw => {
+    const p = H.normPin(raw); if (!p) { $('#anMsg').textContent = 'נקודה לא תקינה: ' + raw; return; }
+    if (chips.includes(p)) return;
+    $('#anMsg').textContent = ed.used && ed.used.has(p) ? `${p} כבר משויך לרשת אחרת` : '';
+    chips.push(p); drawChips();
+  };
+  $('#anPin').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); const v = $('#anPin').value.trim(); if (v) { v.split(/[,\s]+/).filter(Boolean).forEach(addPin); $('#anPin').value = ''; } } });
+  $('#anPin').addEventListener('change', () => { const v = $('#anPin').value.trim(); if (v && ed.used && /-/.test(v) && $('#pinList').querySelector(`option[value="${CSS.escape(v)}"]`)) { addPin(v); $('#anPin').value = ''; } });
+  $('#anName').addEventListener('input', drawChips);
+  $('#anChips').addEventListener('click', e => { const i = e.target.dataset.rm; if (i != null) { chips.splice(+i, 1); drawChips(); } });
+  $('#unassigned').addEventListener('click', e => { const p = e.target.dataset.pin; if (p) addPin(p); });
+  $('#anAdd').onclick = () => {
+    const name = $('#anName').value.trim().replace(/[:#,]/g, '_');
+    const ta = $('#nlf'); ta.value = ta.value.replace(/\s*$/, '\n') + `${name}: ${chips.join(', ')}\n`;
+    chips.length = 0; $('#anName').value = ''; drawChips(); reparse(); $('#anName').focus();
+    $('#anMsg').textContent = 'נוספה שורה ' + name;
+  };
+  setupDrawing(ed, n);
   for (const f of ['pn', 'rev']) $('#' + f).addEventListener('input', updChecks);
   $('#checklist').addEventListener('change', e => { const k = e.target.dataset.k; if (!k) return; e.target.checked ? ed.checks.add(k) : ed.checks.delete(k); updChecks(); });
   $('#checkAll').onclick = async () => {
@@ -216,55 +268,74 @@ function vNetlistEdit(id) {
       createdAt: n.createdAt || now(), createdBy: n.createdBy || S.me, source: n.source || 'manual',
       status: verified ? 'verified' : (changed ? 'draft' : (n.status || 'draft')),
       verifiedBy: verified ? S.me : (changed ? null : (n.verifiedBy || null)), verifiedAt: verified ? now() : (changed ? null : (n.verifiedAt || null)) };
+    if (S.fs && ed.drawFile) { try { data.drawingFile = await S.fs.saveDrawing(docId, ed.drawFile); data.drawingName = ed.drawFile.name; } catch (e) { toast('השרטוט לא נשמר בתיקייה: ' + e.message); } }
+    else if (n.drawingFile) { data.drawingFile = n.drawingFile; data.drawingName = n.drawingName; }
     try { await put('netlists', docId, data); $('#saveMsg').textContent = 'נשמר ' + fmtDate(now()); S.draft.netlist = null; if (isNew) location.hash = 'netlist-' + docId; }
     catch (e) { toast(e.code === 'quota_exceeded' ? 'המאגר מלא — יש למחוק נתונים ישנים' : 'השמירה נכשלה: ' + (e.code || e.message)); }
   };
   $('#saveDraft').onclick = () => save(false);
   $('#saveVerified').onclick = async () => { if (await dialog('לשמור כמאומת?', `<p>אתם מאשרים שכל ${ed.items.length} הרשתות נבדקו מול השרטוט. האישור יירשם על שמכם.</p>`, 'שמור כמאומת')) save(true); };
   if ($('#dup')) $('#dup').onclick = () => { S.draft.netlist = { pn: n.pn, rev: '', title: n.title, text: n.text.replace(/^REV:.*$/m, 'REV: '), status: 'draft' }; location.hash = 'netlist-new'; };
-  setupAI(ed);
   reparse();
 }
 
-// ----- AI extraction from drawing -----
+// ----- drawing viewer (+ optional Claude extraction) -----
+async function renderSheets(f, rot) {
+  const sheets = [];
+  if (/pdf$/i.test(f.name) || f.type === 'application/pdf') {
+    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise;
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p);
+      const v0 = page.getViewport({ scale: 1, rotation: (page.rotate + rot) % 360 });
+      const scale = Math.min(4, 3300 / Math.max(v0.width, v0.height));
+      const vp = page.getViewport({ scale, rotation: (page.rotate + rot) % 360 });
+      const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      sheets.push(c);
+    }
+  } else {
+    const img = await createImageBitmap(f);
+    const c = document.createElement('canvas'); const sw = rot % 180 ? img.height : img.width, sh = rot % 180 ? img.width : img.height;
+    c.width = sw; c.height = sh; const ctx = c.getContext('2d'); ctx.translate(sw / 2, sh / 2); ctx.rotate(rot * Math.PI / 180); ctx.drawImage(img, -img.width / 2, -img.height / 2);
+    sheets.push(c);
+  }
+  return sheets;
+}
+function setupDrawing(ed, n) {
+  const box = $('#sheetBox');
+  const show = async () => {
+    const f = ed.drawFile; if (!f) return;
+    $('#drawMsg').textContent = 'טוען שרטוט…';
+    try {
+      ed.sheets = await renderSheets(f, +$('#rot').value);
+      box.innerHTML = ''; ed.sheets.forEach(c => box.append(c));
+      box.style.setProperty('--z', $('#zoom').value);
+      $('#drawMsg').textContent = `${f.name} · ${ed.sheets.length} גיליונות. גררו לגלילה, זום מהמחוון.`;
+      if (S.sample) setupAI(ed);
+    } catch (e) { $('#drawMsg').textContent = 'לא ניתן להציג: ' + (e.message || e); }
+  };
+  $('#drawFile').onchange = () => { ed.drawFile = $('#drawFile').files[0] || null; show(); };
+  $('#rot').onchange = show;
+  $('#zoom').oninput = () => box.style.setProperty('--z', $('#zoom').value);
+  // drag to pan
+  let drag = null;
+  box.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, l: box.scrollLeft, t: box.scrollTop }; box.setPointerCapture(e.pointerId); });
+  box.addEventListener('pointermove', e => { if (drag) { box.scrollLeft = drag.l - (e.clientX - drag.x); box.scrollTop = drag.t - (e.clientY - drag.y); } });
+  box.addEventListener('pointerup', () => drag = null);
+  if (S.fs && n.drawingFile) S.fs.readDrawing(n.drawingFile).then(f => { if (f) { ed.drawFile = new File([f], n.drawingName || n.drawingFile, { type: f.type }); show(); } });
+}
 async function setupAI(ed) {
   const box = $('#aiPanel');
-  if (!S.sample) { box.innerHTML = '<h2>חילוץ מהשרטוט</h2><p class="muted small">חילוץ בעזרת Claude אינו זמין בתצוגה זו. אפשר להקליד את הנטליסט ידנית.</p>'; return; }
   let lim = null; try { lim = await S.sample.limits(); } catch (e) { }
-  if (!lim || !lim.images) { box.innerHTML = '<h2>חילוץ מהשרטוט</h2><p class="muted small">שליחת תמונות ל־Claude אינה זמינה בתצוגה זו. אפשר להקליד את הנטליסט ידנית.</p>'; return; }
-  let sheets = [];
-  const render = async () => {
-    const f = $('#drawFile').files[0]; if (!f) return;
-    $('#aiStatus').textContent = 'מעבד קובץ…'; sheets = [];
-    const rot = +$('#rot').value;
-    try {
-      if (/pdf$/i.test(f.name) || f.type === 'application/pdf') {
-        const doc = await pdfjsLib.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise;
-        for (let p = 1; p <= doc.numPages; p++) {
-          const page = await doc.getPage(p);
-          const v0 = page.getViewport({ scale: 1, rotation: (page.rotate + rot) % 360 });
-          const scale = Math.min(4, 3300 / Math.max(v0.width, v0.height));
-          const vp = page.getViewport({ scale, rotation: (page.rotate + rot) % 360 });
-          const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
-          const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
-          await page.render({ canvasContext: ctx, viewport: vp }).promise;
-          sheets.push(c);
-        }
-      } else {
-        const img = await createImageBitmap(f);
-        const c = document.createElement('canvas'); const sw = rot % 180 ? img.height : img.width, sh = rot % 180 ? img.width : img.height;
-        c.width = sw; c.height = sh; const ctx = c.getContext('2d'); ctx.translate(sw / 2, sh / 2); ctx.rotate(rot * Math.PI / 180); ctx.drawImage(img, -img.width / 2, -img.height / 2);
-        sheets.push(c);
-      }
-      $('#thumbs').innerHTML = ''; sheets.forEach((c, i) => { const im = document.createElement('img'); im.alt = 'גיליון ' + (i + 1); im.src = c.toDataURL('image/jpeg', .5); $('#thumbs').append(im); });
-      $('#aiStatus').textContent = `${sheets.length} גיליונות. בדקו בתמונות שהכיתוב קריא ולא הפוך — אם לא, שנו סיבוב.`;
-      $('#aiGo').disabled = false;
-    } catch (e) { $('#aiStatus').textContent = 'לא ניתן לקרוא את הקובץ: ' + (e.message || e); }
-  };
-  $('#drawFile').onchange = render; $('#rot').onchange = render;
+  if (!lim || !lim.images) { box.innerHTML = ''; return; }
+  box.innerHTML = `<h3>חילוץ בעזרת Claude</h3><p class="small muted">כל גיליון נחתך לאריחים ו־Claude מתמלל את החיבורים. התוצאה טיוטה — חובה לאשר כל רשת.</p>
+    <label for="hint">הערה ל־Claude (רשות)</label><input id="hint" placeholder="למשל: E = פיצול, BK = גוף המחבר">
+    <div class="row" style="margin-top:8px"><button id="aiGo" class="acc">חלץ נטליסט</button><button id="aiStop" class="ghost" hidden>עצור</button><span id="aiStatus" class="small muted"></span></div>`;
   let ctl = null;
   $('#aiStop').onclick = () => ctl && ctl.abort();
   $('#aiGo').onclick = async () => {
+    const sheets = ed.sheets || []; if (!sheets.length) return;
     if ($('#nlf').value.trim() && !(await dialog('להחליף את הנטליסט הקיים?', '<p>הטקסט הנוכחי יוחלף בתוצאת החילוץ.</p>', 'החלף'))) return;
     $('#aiGo').disabled = true; $('#aiStop').hidden = false; const results = [];
     try {
@@ -272,8 +343,7 @@ async function setupAI(ed) {
         const tiles = await tile(sheets[i], Math.min(lim.images.maxCount || 6, 12));
         $('#aiStatus').textContent = `גיליון ${i + 1}/${sheets.length}: Claude קורא ${tiles.length} אריחים… (עשוי לקחת דקה-שתיים)`;
         ctl = new AbortController();
-        const r = await S.sample.json(H.aiNetlistPrompt(i + 1, tiles.length, $('#hint').value.trim()), { images: tiles, modelTier: 'complex', signal: ctl.signal });
-        results.push(r);
+        results.push(await S.sample.json(H.aiNetlistPrompt(i + 1, tiles.length, $('#hint').value.trim()), { images: tiles, modelTier: 'complex', signal: ctl.signal }));
       }
       const out = H.aiNetlistToNLF(results, { pn: $('#pn').value.trim(), rev: $('#rev').value.trim(), title: $('#title').value.trim() });
       $('#nlf').value = out.text;
@@ -282,7 +352,7 @@ async function setupAI(ed) {
       $('#nlf').dispatchEvent(new Event('input'));
       $('#aiStatus').textContent = `החילוץ הסתיים. ${out.notes.length ? out.notes.length + ' קטעים לא ודאיים סומנו. ' : ''}עברו על כל רשת מול השרטוט לפני אימות.`;
     } catch (e) {
-      $('#aiStatus').textContent = e.code === 'cancelled' ? 'נעצר.' : e.code === 'not_granted' ? 'לא ניתן אישור להשתמש ב־Claude.' : e.code === 'rate_limited' ? 'הגעתם למגבלת שימוש — נסו שוב מאוחר יותר.' : e.code === 'invalid_json' ? 'התשובה לא התקבלה בפורמט תקין — נסו שוב או גיליון אחד בכל פעם.' : 'החילוץ נכשל: ' + (e.code || e.message);
+      $('#aiStatus').textContent = e.code === 'cancelled' ? 'נעצר.' : e.code === 'not_granted' ? 'לא ניתן אישור להשתמש ב־Claude.' : e.code === 'rate_limited' ? 'הגעתם למגבלת שימוש — נסו שוב מאוחר יותר.' : e.code === 'invalid_json' ? 'התשובה לא התקבלה בפורמט תקין — נסו שוב.' : 'החילוץ נכשל: ' + (e.code || e.message);
     } finally { $('#aiGo').disabled = false; $('#aiStop').hidden = true; }
   };
 }
@@ -662,7 +732,7 @@ function vProgram(id) {
   const stale = !n || n.updatedAt !== p.netlistUpdatedAt || n.status !== 'verified';
   const ds = P.decisionState(p.review, p.deviations);
   const mine = p.preparedBy === S.me, locked = p.status !== 'draft';
-  const canDecide = p.status === 'submitted' && !mine;
+  const canDecide = p.status === 'submitted' && !mine && (S.mode !== 'folder' || ['approver', 'admin'].includes(S.role));
   const devs = p.deviations || {};
   const uids = [p.preparedBy, p.decision?.by, ...Object.values(devs).flatMap(d => [d.by, d.decidedBy])];
   names(uids).then(() => S.view === 'program' && document.querySelectorAll('[data-uid]').forEach(e => e.textContent = nameOf(e.dataset.uid)));
@@ -686,6 +756,7 @@ function vProgram(id) {
   <div class="panel"><h2>החלטה</h2>
     <p>${ds.nonPass ? `${ds.nonPass} פריטים דורשים התייחסות: ${ds.unjustified.length} ללא נימוק · ${ds.open.length} ממתינים להחלטה · ${ds.accepted.length} התקבלו · ${ds.rejected.length} נדחו` : 'כל הקריטריונים תקינים.'}</p>
     ${p.status === 'submitted' && mine ? '<p class="note">הגשתם את התוכנית — ההחלטה חייבת להתקבל ע"י בודק אחר.</p>' : ''}
+    ${p.status === 'submitted' && !mine && !canDecide ? '<p class="note">רק חברי צוות בתפקיד "מאשר" יכולים להחליט על התוכנית.</p>' : ''}
     <div class="row">
       ${p.status === 'draft' ? `<button class="ghost" id="reanalyse">נתח מחדש</button><button class="acc" id="submit" ${ds.canSubmit && !stale && p.netlistVerified ? '' : 'disabled'}>הגש לאישור</button>` : ''}
       ${p.status === 'submitted' && mine ? '<button class="ghost" id="toDraft">החזר לטיוטה</button>' : ''}
@@ -758,19 +829,88 @@ function programReportHtml(p, ds) {
 }
 async function downloadHtml(html, filename) {
   filename = filename.replace(/[^\w.\-]/g, '_');
+  if (S.mode === 'folder' || S.mode === 'memory') { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' })); a.download = filename; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500); return; }
   if (S.downloads) { try { await S.downloads.save({ filename, data: new Blob([html], { type: 'text/html' }) }); return; } catch (e) { if (e && e.code === 'cancelled') return; } }
   try { await navigator.clipboard.writeText(html); toast('ההורדה אינה זמינה כאן — קוד הדוח הועתק.', 6000); } catch (e) { toast('לא ניתן להוריד בתצוגה זו'); }
+}
+
+// ---------------- team & folder mode ----------------
+const ROLES = { inspector: 'בודק', approver: 'מאשר', admin: 'מנהל' };
+function setWho() {
+  const m = (S.team?.members || []).find(x => x.id === S.me);
+  $('#who').innerHTML = S.mode === 'folder' && m ? `<a href="#team" style="color:inherit">${esc(m.name)} · ${esc(ROLES[m.role])}</a>` : esc(S.names[S.me] || '');
+}
+function vConnect(state, handle, msg) {
+  view(`<h1>חיבור לתיקייה המשותפת</h1><div class="panel" style="max-width:640px">
+  ${!HQAFS.supported() ? `<div class="note err">הדפדפן הזה לא תומך בעבודה עם תיקייה משותפת. פתחו את הקובץ ב־<b>Chrome</b> או ב־<b>Edge</b> במחשב.</div>` : `
+  <p>כל הנתונים של הצוות נשמרים בתיקייה ברשת. בחרו את התיקייה שבה נמצא הקובץ הזה (או תיקייה ייעודית). הדפדפן יבקש אישור לקרוא ולכתוב בה.</p>
+  ${msg ? `<div class="note err">${esc(msg)}</div>` : ''}
+  <div class="row">${state === 'prompt' ? `<button class="acc" id="reconn">התחבר שוב ל־${esc(handle.name)}</button><button class="ghost" id="pick">בחר תיקייה אחרת</button>` : '<button class="acc" id="pick">בחר תיקייה</button>'}</div>`}
+  <details style="margin-top:14px"><summary class="small">רק לנסות, בלי לשמור</summary><p class="small muted">מצב ניסיון: הנתונים נמחקים כשסוגרים את הדף.</p><button class="ghost" id="memo">פתח במצב ניסיון</button></details></div>`);
+  const go = async fn => { try { S.fs = await fn(); await afterFolder(); } catch (e) { if (e.name !== 'AbortError') vConnect(state, handle, e.message || String(e)); } };
+  if ($('#pick')) $('#pick').onclick = () => go(HQAFS.pick);
+  if ($('#reconn')) $('#reconn').onclick = () => go(() => HQAFS.reconnect(handle));
+  $('#memo').onclick = () => { S.mode = 'memory'; S.local = true; S.me = 'local'; S.role = 'admin'; refreshLocal(); route(); };
+}
+async function afterFolder() {
+  S.team = await S.fs.team();
+  const saved = (() => { try { return localStorage.getItem('hqa-me:' + S.fs.name); } catch (e) { return null; } })();
+  if (saved && S.team.members.some(m => m.id === saved)) return startFolder(saved);
+  vLogin();
+}
+function vLogin() {
+  const ms = S.team.members;
+  view(`<h1>מי אתם?</h1><div class="panel" style="max-width:640px">
+  <p class="small muted">תיקייה: <b>${esc(S.fs.name)}</b>. הבחירה נשמרת בדפדפן הזה. זיהוי לפי שם בלבד — אין סיסמה.</p>
+  ${ms.length ? `<div class="row">${ms.map(m => `<button class="ghost" data-me="${esc(m.id)}">${esc(m.name)} <span class="small muted">· ${esc(ROLES[m.role])}</span></button>`).join('')}</div><h3>לא ברשימה?</h3>` : '<p>אתם הראשונים כאן — תוגדרו כמנהלי הצוות.</p>'}
+  <label for="newName">שם מלא</label><input id="newName"><div class="row" style="margin-top:10px"><button class="acc" id="addMe">הוסף אותי</button></div></div>`);
+  $('#view').querySelectorAll('[data-me]').forEach(b => b.onclick = () => startFolder(b.dataset.me));
+  $('#addMe').onclick = async () => {
+    const name = $('#newName').value.trim(); if (!name) return;
+    const team = await S.fs.team();
+    const m = { id: 'u_' + uid(), name, role: team.members.length ? 'inspector' : 'admin', addedAt: now() };
+    team.members.push(m); await S.fs.saveTeam(team); S.team = team; startFolder(m.id);
+  };
+}
+function startFolder(me) {
+  S.me = me; try { localStorage.setItem('hqa-me:' + S.fs.name, me); } catch (e) { }
+  const m = S.team.members.find(x => x.id === me); S.role = m ? m.role : 'inspector';
+  for (const x of S.team.members) S.names[x.id] = x.name;
+  S.user = { canEdit: async () => S.role === 'admin', profiles: async ids => Object.fromEntries(ids.map(i => [i, { name: (S.team.members.find(x => x.id === i) || {}).name || '' }])) };
+  setWho(); $('#teamLink').hidden = false; subscribeFolder(); route();
+}
+async function vTeam() {
+  if (S.mode !== 'folder') { view('<div class="panel empty">ניהול צוות זמין במצב תיקייה משותפת.</div>'); return; }
+  S.team = await S.fs.team(); for (const x of S.team.members) S.names[x.id] = x.name;
+  const admin = S.role === 'admin';
+  view(`<h1>צוות</h1><div class="panel"><p class="small muted">תיקייה משותפת: <b>${esc(S.fs.name)}</b>. התפקידים קובעים מי מאשר תוכניות ומי מנהל. הזיהוי לפי שם בלבד, ולכן הוא אמצעי נוחות ומעקב — לא אבטחה.</p>
+  <table class="stack"><thead><tr><th>שם</th><th>תפקיד</th><th>נוסף</th></tr></thead><tbody>${S.team.members.map(m => `<tr><td>${esc(m.name)}${m.id === S.me ? ' (אתם)' : ''}</td><td>${admin && m.id !== S.me ? `<select data-role="${esc(m.id)}">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${m.role === k ? 'selected' : ''}>${v}</option>`).join('')}</select>` : esc(ROLES[m.role])}</td><td>${esc(fmtDate(m.addedAt))}</td></tr>`).join('')}</tbody></table>
+  ${admin ? '<h3>הוספת חבר צוות</h3><div class="row"><input id="tmName" placeholder="שם מלא" style="max-width:280px"><button id="tmAdd">הוסף</button></div>' : ''}
+  <div class="row" style="margin-top:14px"><button class="ghost" id="switchUser">החלף משתמש</button></div></div>`);
+  $('#view').querySelectorAll('[data-role]').forEach(sel => sel.onchange = async () => { const t = await S.fs.team(); const m = t.members.find(x => x.id === sel.dataset.role); if (m) { m.role = sel.value; await S.fs.saveTeam(t); toast('עודכן'); } });
+  if ($('#tmAdd')) $('#tmAdd').onclick = async () => { const name = $('#tmName').value.trim(); if (!name) return; const t = await S.fs.team(); t.members.push({ id: 'u_' + uid(), name, role: 'inspector', addedAt: now() }); await S.fs.saveTeam(t); vTeam(); };
+  $('#switchUser').onclick = () => { try { localStorage.removeItem('hqa-me:' + S.fs.name); } catch (e) { } location.reload(); };
 }
 
 // ---------------- boot ----------------
 route();
 (async () => {
-  const use = n => (window.claude && window.claude.use) ? window.claude.use(n).catch(() => null) : Promise.resolve(null);
-  const [db, user, sample, downloads] = await Promise.all([use('db'), use('user'), use('sample'), use('downloads')]);
-  S.db = db; S.user = user; S.sample = sample; S.downloads = downloads;
-  if (user) { try { S.me = await user.id(); } catch (e) { } try { const me = await user.me(); if (me) { S.names[S.me] = me.name || 'אני'; $('#who').textContent = me.name || ''; } } catch (e) { } }
-  if (!S.me) S.me = 'local';
-  if (db) subscribe(); else { S.local = true; refreshLocal(); }
-  route();
+  if (window.claude && window.claude.use) {
+    const use = n => window.claude.use(n).catch(() => null);
+    const [db, user, sample, downloads] = await Promise.all([use('db'), use('user'), use('sample'), use('downloads')]);
+    S.db = db; S.user = user; S.sample = sample; S.downloads = downloads; S.mode = db ? 'claude' : 'memory';
+    if (user) { try { S.me = await user.id(); } catch (e) { } try { const me = await user.me(); if (me) { S.names[S.me] = me.name || 'אני'; $('#who').textContent = me.name || ''; } } catch (e) { } }
+    if (!S.me) S.me = 'local';
+    if (db) subscribe(); else { S.local = true; refreshLocal(); }
+    route(); return;
+  }
+  S.mode = 'folder';
+  try {
+    if (new URLSearchParams(location.search).has('opfs')) { S.fs = await HQAFS.opfs(); return afterFolder(); }
+    if (!HQAFS.supported()) return vConnect('none');
+    const r = await HQAFS.restore();
+    if (r.state === 'ok') { S.fs = new HQAFS.FolderStore(r.handle); return afterFolder(); }
+    vConnect(r.state, r.handle);
+  } catch (e) { vConnect('none', null, e.message || String(e)); }
 })();
 }
