@@ -133,14 +133,14 @@ function vNetlists() {
 }
 
 const NLF_HELP = `פורמט: שורה לכל רשת — שם: נקודות מופרדות בפסיק.
-PN: C6AH0000C
+PN: HX-1000
 REV: C
-CONN PB1: 1-78, BK        # רשימת פינים במחבר (רשות — מאפשר בדיקת פינים פנויים)
-E28: JU1-27, JU1-12, PG1-21   # רשת דרך פיצול
-W1: PB1-5, PB1-43             # חוט בין שתי נקודות
-R R1 3.48: JU1-49, JU1-50     # נגד
+CONN J3: 1-78, BK        # רשימת פינים במחבר (רשות — מאפשר בדיקת פינים פנויים)
+S1: J1-1, J1-2, J2-1   # רשת דרך פיצול
+W1: J3-5, J3-6             # חוט בין שתי נקודות
+R R1 3.48: J1-9, J1-10     # נגד
 D D1: X1-1, X2-3              # דיודה (אנודה ראשונה)
-SH DATA_SHIELD: PB1-31        # שילוד בקצה אחד`;
+SH DATA_SHIELD: J3-12        # שילוד בקצה אחד`;
 
 function vNetlistEdit(id) {
   const isNew = id === 'new';
@@ -377,7 +377,7 @@ function analyse(n, run) {
   const rep = ENG.audit({ drawing, mechanical, atp, results });
   return { nl, cmp, rep, derivedConnectors, atp };
 }
-// engine ids -> the names inspectors use (PB1:31 -> PB1-31, @E28 -> פיצול E28, W181 -> its two ends)
+// engine ids -> the names inspectors use (J3:12 -> J3-12, @S1 -> פיצול S1, W181 -> its two ends)
 function prettifier(rep, atp) {
   const pin = s => String(s).replace(/@([\w.+-]+)~open/g, '$1(open)').replace(/@([\w.+-]+)/g, '$1').replace(/\b([A-Z][\w]*):([\w]+)\b/g, '$1-$2');
   const ends = new Map();

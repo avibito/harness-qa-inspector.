@@ -11,19 +11,19 @@
   'use strict';
 
   // ---------- pin naming ----------
-  // Accept "PB1-5", "PB1:5", "pb1 - 5". Connector ids may contain "_" (C_SAC). Last "-" or ":" splits.
+  // Accept "J3-5", "J3:5", "pb1 - 5". Connector ids may contain "_" (J_AUX). Last "-" or ":" splits.
   function normPin(s) {
     const t = String(s || '').trim().replace(/\s*[-:]\s*(?=[^-:]*$)/, '-');
     const m = t.match(/^(.+)-([^-]+)$/);
     if (!m) return null;
     return m[1].toUpperCase() + '-' + m[2].toUpperCase();
   }
-  const toNode = p => p.replace(/-(?=[^-]*$)/, ':');   // PB1-5 -> PB1:5
+  const toNode = p => p.replace(/-(?=[^-]*$)/, ':');   // J3-5 -> J3:5
   const fromNode = n => n.replace(/:(?=[^:]*$)/, '-');
   const connOf = p => p.replace(/-[^-]*$/, '');
   const pinNum = p => p.replace(/^.*-/, '');
 
-  // natural sort for pins: PB1-2 < PB1-10 < PB1-BK
+  // natural sort for pins: J3-2 < J3-10 < J3-BK
   function pinCmp(a, b) {
     const ca = connOf(a), cb = connOf(b);
     if (ca !== cb) return ca < cb ? -1 : 1;
@@ -171,7 +171,7 @@ Rules:
 - For every continuity measurement between two points write one row type=continuity (a = reference point, b = other point).
 - For the group's insulation/isolation measurement write one row type=isolation with b=* and the measured value.
 - For 4-wire / resistance measurements write type=resistance with min and max limits if stated.
-- Points are written CONNECTOR-PIN (e.g. PB1-5). value is the number only; unit one of ohm,kohm,Mohm,Gohm. status PASS or FAIL as reported.
+- Points are written CONNECTOR-PIN (e.g. J3-5). value is the number only; unit one of ohm,kohm,Mohm,Gohm. status PASS or FAIL as reported.
 - Do not invent rows. If a value is shown as ">5 GΩ" write 5 and Gohm.
 Report text:
 """
@@ -181,12 +181,12 @@ ${text.slice(0, 200000)}
 
   // ---------- netlist text format (NLF) ----------
   // Lines:
-  //   # comment         |  PN: C6AH0000C   |  REV: C   |  TITLE: Main harness
-  //   CONN PB1: 1-78, BK            connector pin list (optional; enables unused-pin checks)
-  //   E28: JU1-27, JU1-12, PG1-21   a net (splice or signal name), pins joined together
-  //   R R1 3.48: JU1-49, JU1-50     resistor between two pins (ohms)
+  //   # comment         |  PN: HX-1000   |  REV: C   |  TITLE: Main harness
+  //   CONN J3: 1-78, BK            connector pin list (optional; enables unused-pin checks)
+  //   S1: J1-1, J1-2, J2-1   a net (splice or signal name), pins joined together
+  //   R R1 3.48: J1-9, J1-10     resistor between two pins (ohms)
   //   D D1: X1-1, X2-3              diode, anode first
-  //   SH DATA_SHIELD: PB1-31        single-ended shield (other end not on a pin)
+  //   SH DATA_SHIELD: J3-12        single-ended shield (other end not on a pin)
   function parseNLF(text) {
     const nl = { pn: '', rev: '', title: '', connectors: {}, nets: [], resistors: [], diodes: [], shields: [], errors: [] };
     const lines = String(text || '').replace(/\r/g, '').split('\n');
@@ -358,13 +358,13 @@ ${text.slice(0, 200000)}
   function aiNetlistPrompt(sheetNo, tileCount, hint) {
     return `These ${tileCount} images are overlapping tiles (left-to-right, top-to-bottom) of ONE sheet (sheet ${sheetNo}) of an electrical wiring diagram of a cable harness.
 Your job: transcribe its connectivity exactly. Accuracy matters more than completeness — if you cannot read something, list it under "uncertain" instead of guessing.
-Conventions: connectors are boxes with an id above (e.g. PB1, JU1, C_SAC) and numbered pin cells. Splices are small circles labelled E<number>. Twisted pairs are drawn with dashed ovals (they do NOT connect wires). A shield that ends in a short open pigtail is single-ended.
+Conventions: connectors are boxes with an id above (e.g. J1, P2, J_AUX) and numbered pin cells. Splices are small circles labelled E<number>. Twisted pairs are drawn with dashed ovals (they do NOT connect wires). A shield that ends in a short open pigtail is single-ended.
 ${hint ? 'Context from the user: ' + hint + '\n' : ''}Reply with ONLY one JSON object:
 {"title_block":{"pn":"","rev":"","sheet":""},
- "nets":[{"name":"E28 or signal name","pins":["JU1-27","PG1-21"]}],
- "resistors":[{"name":"R1","ohms":3.48,"a":"JU1-49","b":"JU1-50"}],
+ "nets":[{"name":"S1 or signal name","pins":["J1-1","J2-1"]}],
+ "resistors":[{"name":"R1","ohms":3.48,"a":"J1-9","b":"J1-10"}],
  "diodes":[{"name":"D1","anode":"X-1","cathode":"Y-2"}],
- "single_end_shields":[{"name":"DATA_SHIELD","pin":"PB1-31"}],
+ "single_end_shields":[{"name":"DATA_SHIELD","pin":"J3-12"}],
  "uncertain":["short description of anything unreadable or ambiguous"]}
 Every net lists ALL connector pins that are electrically joined (through wires and splices), written CONNECTOR-PIN. Name a net after its splice if it has one, else after its signal name.`;
   }
