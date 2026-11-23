@@ -10,7 +10,7 @@ if (window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf.wo
 
 // ---------------- state ----------------
 const S = { db: null, user: null, me: null, canWrite: true, sample: null, downloads: null, ready: false,
-  netlists: [], runs: [], cases: [], names: {}, local: false, draft: {}, newRun: null };
+  netlists: [], runs: [], cases: [], programs: [], names: {}, local: false, draft: {}, newRun: null };
 const VERDICT = {
   INCOMPLETE: ['הבדיקה לא בוצעה במלואה', 'bad'], BLOCKED: ['כיסוי שלם — קיימים חסמים', 'warn'],
   COMPLETE_PENDING_ENGINEERING_REVIEW: ['כיסוי שלם — ממתין לסקירה הנדסית', 'ok']
@@ -40,15 +40,16 @@ async function names(ids) {
 const nameOf = id => id ? (S.names[id] || 'משתמש') : '—';
 
 // ---------------- data layer (shared db, or in-memory fallback) ----------------
-const mem = { netlists: new Map(), runs: new Map(), runData: new Map(), cases: new Map() };
+const mem = { netlists: new Map(), runs: new Map(), runData: new Map(), cases: new Map(), programs: new Map(), requirements: new Map() };
 async function put(col, id, data) {
   if (S.db) { await S.db.doc(col + '/' + id).set(data); }
   else { mem[col].set(id, data); refreshLocal(); }
 }
 async function patch(col, id, data) {
   if (S.db) await S.db.doc(col + '/' + id).update(data);
-  else { mem[col].set(id, { ...mem[col].get(id), ...data }); refreshLocal(); }
+  else { mem[col].set(id, deepMerge(mem[col].get(id) || {}, data)); refreshLocal(); }
 }
+function deepMerge(a, b) { const o = { ...a }; for (const [k, v] of Object.entries(b)) o[k] = v && typeof v === 'object' && !Array.isArray(v) && a[k] && typeof a[k] === 'object' && !Array.isArray(a[k]) ? deepMerge(a[k], v) : v; return o; }
 async function getDoc(col, id) {
   if (S.db) { const s = await S.db.doc(col + '/' + id).get(); return s.exists ? s.data() : null; }
   return mem[col].get(id) || null;
@@ -57,6 +58,7 @@ function refreshLocal() {
   S.netlists = [...mem.netlists].map(([id, d]) => ({ id, ...d }));
   S.runs = [...mem.runs].map(([id, d]) => ({ id, ...d })).sort((a, b) => b.createdAt < a.createdAt ? -1 : 1);
   S.cases = [...mem.cases].map(([id, d]) => ({ id, ...d }));
+  S.programs = [...mem.programs].map(([id, d]) => ({ id, ...d }));
   liveRender();
 }
 function subscribe() {
@@ -71,21 +73,22 @@ function subscribe() {
   };
   watch(S.db.collection('netlists'), 'netlists', (a, b) => (a.pn + a.rev).localeCompare(b.pn + b.rev));
   watch(S.db.collection('runs').orderBy('createdAt', 'desc').limit(500), 'runs');
+  watch(S.db.collection('programs'), 'programs', (a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
   watch(S.db.collection('cases'), 'cases', (a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 }
 
 // ---------------- routing ----------------
-const liveViews = new Set(['home', 'netlists', 'findings', 'history']);
+const liveViews = new Set(['home', 'netlists', 'findings', 'history', 'programs']);
 function route() {
   const h = (location.hash || '#home').slice(1);
   const [v, ...rest] = h.split('-'); const arg = rest.join('-');
-  for (const a of document.querySelectorAll('#nav a')) a.classList.toggle('on', a.getAttribute('href') === '#' + v);
+  for (const a of document.querySelectorAll('#nav a')) a.classList.toggle('on', a.getAttribute('href') === '#' + v || (v === 'program' && a.getAttribute('href') === '#programs') || (v === 'netlist' && a.getAttribute('href') === '#netlists'));
   S.view = v; S.arg = arg;
-  ({ home: vHome, run: arg ? vRunResult : vRunNew, netlists: vNetlists, netlist: vNetlistEdit, findings: vFindings, history: vHistory }[v] || vHome)(arg);
+  ({ home: vHome, run: arg ? vRunResult : vRunNew, netlists: vNetlists, netlist: vNetlistEdit, findings: vFindings, history: vHistory, programs: vPrograms, program: arg === 'new' ? vProgramNew : vProgram }[v] || vHome)(arg);
   window.scrollTo(0, 0);
 }
 function liveRender() {
-  if (!(liveViews.has(S.view) || (S.view === 'run' && (S.arg || !(S.newRun && S.newRun.run))))) return;
+  if (!(liveViews.has(S.view) || (S.view === 'run' && (S.arg || !(S.newRun && S.newRun.run))) || (S.view === 'program' && S.arg && S.arg !== 'new'))) return;
   const a = document.activeElement;
   if (a && a !== document.body && $('#view').contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) { S.pendingRender = true; return; } // don't wipe what someone is typing
   route();
@@ -110,6 +113,8 @@ function vHome() {
       <div class="kpi"><strong>${last30}</strong>בדיקות ב־30 יום</div>
       <div class="kpi"><strong class="${open ? 't-bad' : 't-ok'}">${open}</strong>ממצאים פתוחים</div>
       <div class="kpi"><strong>${ver}/${S.netlists.length}</strong>נטליסטים מאומתים</div>
+      <div class="kpi"><strong>${S.programs.filter(isApproved).length}/${S.programs.length}</strong>תוכניות מאושרות</div>
+      <div class="kpi"><strong class="${S.programs.filter(p => p.status === 'submitted').length ? 't-warn' : ''}">${S.programs.filter(p => p.status === 'submitted').length}</strong>ממתינות לאישור</div>
     </div></div>
   <div class="panel"><h2>בדיקות אחרונות</h2>${runsTable(S.runs.slice(0, 12))}</div>`);
 }
@@ -388,6 +393,7 @@ function prettifier(rep, atp) {
 async function executeRun(n, run, serial, note, fileName) {
   const { cmp, rep, derivedConnectors, atp } = analyse(n, run);
   const pr = prettifier(rep, atp);
+  const fp = P.fingerprint(P.programStructure(run)); const prog = programFor(n.pn, fp);
   const id = (n.pn + '__' + serial).replace(/[^\w\-.~:@+]/g, '_').slice(0, 80) + '__' + uid();
   const order = { blocker: 0, gap: 1, review: 2, info: 3 };
   const findings = rep.findings.filter(f => f.code !== 'END_TO_END_SPLICE')
@@ -399,6 +405,7 @@ async function executeRun(n, run, serial, note, fileName) {
     verdict: { ...rep.verdict, untested_points: rep.verdict.untested_points.map(pr.pin), partially_tested_spares: rep.verdict.partially_tested_spares.map(pr.pin) }, summary: { ...rep.summary, by_severity: rep.summary.by_severity }, derivedConnectors,
     compareCount: cmp.count, compareRows: cmp.rows.filter(r => r.status !== 'MATCH').slice(0, 200), compareStrip: cmp.rows.map(r => r.status === 'MATCH' ? 0 : ['EXTRA'].includes(r.status) ? 1 : 2),
     findings, findingsTotal: rep.findings.length, routineSplicePaths: rep.findings.filter(f => f.code === 'END_TO_END_SPLICE').length,
+    programFingerprint: fp, programId: prog ? prog.id : null, programStatusAtRun: prog ? prog.status : 'none',
     createdAt: now(), createdBy: S.me
   };
   await put('runs', id, doc);
@@ -428,6 +435,7 @@ function vRunResult(id) {
     <p class="small muted" style="margin:8px 0 0">נטליסט מהדורה ${esc(r.rev)} (${r.netlistStatus === 'verified' ? 'מאומת' : '<b class="t-warn">טיוטה</b>'}) · דוח: ${esc(r.fileName)} · ${esc(r.meta?.program || '')} ${esc(r.meta?.runDate || '')} · הורץ ע"י <span data-uid="${esc(r.createdBy)}">${esc(nameOf(r.createdBy))}</span> ${esc(fmtDate(r.createdAt))}</p>
   </div></div>
   ${revMismatch ? `<div class="note err">אי־התאמת מהדורות: הנטליסט מהדורה <b>${esc(r.rev)}</b>, תוכנית הבדיקה נבנתה למהדורה <b>${esc(r.meta.schemaRev)}</b>.</div>` : ''}
+  ${programBanner(r)}
   ${r.aiConverted ? '<div class="note">הדוח הומר ע"י Claude מפורמט לא מוכר.</div>' : ''}
   <div class="row" style="margin-top:10px"><button id="dl" class="acc">הורד דוח</button><button id="openAll" class="ghost">פתח לטיפול את כל החסמים והפערים</button><button id="rerun" class="ghost">הרץ שוב מול הנטליסט העדכני</button></div></div>
   <div class="panel"><h2>השוואת רשתות: שרטוט מול בודק</h2>
@@ -456,6 +464,13 @@ function vRunResult(id) {
     const id2 = await executeRun(pick, d.run, r.serial, 'הרצה חוזרת של ' + r.id, r.fileName);
     location.hash = 'run-' + id2;
   };
+}
+function programBanner(r) {
+  if (!r.programFingerprint) return '';
+  const p = programFor(r.pn, r.programFingerprint);
+  if (p && isApproved(p)) return `<div class="note" style="border-color:var(--ok)">התוכנית שבה בוצעה הבדיקה <b>${esc(PST[p.status][0])}</b> (טביעת אצבע <span class="mono">${esc(r.programFingerprint.slice(0, 8))}</span>). <a href="#program-${esc(p.id)}">לאישור</a></div>`;
+  if (p) return `<div class="note err">התוכנית שבה בוצעה הבדיקה במצב <b>${esc(PST[p.status][0])}</b>. <a href="#program-${esc(p.id)}">לבדיקת התוכנית</a></div>`;
+  return `<div class="note err">התוכנית שבה בוצעה הבדיקה (טביעת אצבע <span class="mono">${esc(r.programFingerprint.slice(0, 8))}</span>) <b>לא נבדקה ולא אושרה</b> — ייתכן שהיא חדשה או ששונתה. <a href="#program-new">בדיקת תוכנית</a></div>`;
 }
 function groupFindings(list) {
   const by = new Map(); for (const f of list) { if (!by.has(f.code)) by.set(f.code, []); by.get(f.code).push(f); }
@@ -551,7 +566,8 @@ function reportHtml(r) {
 <table><tr><th>מק"ט</th><td class="mono">${esc(r.pn)}</td><th>מספר סידורי</th><td class="mono">${esc(r.serial)}</td></tr>
 <tr><th>מהדורת נטליסט</th><td>${esc(r.rev)} (${r.netlistStatus === 'verified' ? 'מאומת' : 'טיוטה'})</td><th>מהדורה בתוכנית הבדיקה</th><td>${esc(r.meta?.schemaRev || '—')}</td></tr>
 <tr><th>תוכנית / דוח</th><td>${esc(r.meta?.program || '')} · ${esc(r.fileName)}</td><th>תאריך בדיקה</th><td>${esc(r.meta?.runDate || '')}</td></tr>
-<tr><th>הופק</th><td>${esc(fmtDate(r.createdAt))}</td><th>הערה</th><td>${esc(r.note)}</td></tr></table>
+<tr><th>הופק</th><td>${esc(fmtDate(r.createdAt))}</td><th>הערה</th><td>${esc(r.note)}</td></tr>
+<tr><th>תוכנית בדיקה</th><td colspan="3">${(() => { const p = r.programFingerprint && programFor(r.pn, r.programFingerprint); return p ? esc(PST[p.status][0]) + (p.decision ? ' · ' + esc(nameOf(p.decision.by)) + ' ' + esc(fmtDate(p.decision.at)) : '') : 'לא אושרה'; })()} · <span class="mono">${esc(r.programFingerprint || '')}</span></td></tr></table>
 <div class="v">הכרעה: ${esc(v[0])}</div>
 <p>${r.compareCount?.MATCH || 0}/${total} רשתות תואמות · נקודות שלא נבדקו: ${r.verdict.untested_points.length} · זוגות ללא בידוד: ${r.verdict.isolation_gaps} · חסמים: ${r.verdict.blockers}</p>
 ${r.compareRows.length ? `<h2>רשתות שאינן תואמות</h2><table><tr><th>רשת</th><th>מצב</th><th>פירוט</th></tr>${r.compareRows.map(x => `<tr><td class="mono">${esc(x.net)}</td><td>${esc(CMP[x.status]?.[0] || x.status)}</td><td>${esc(x.detail)}</td></tr>`).join('')}</table>` : '<p>כל הרשתות תואמות.</p>'}
@@ -560,11 +576,190 @@ ${r.reportWarnings?.length ? `<h2>הערות מתוך דוח הבודק</h2><ul>
 <p><b>אין בדוח זה אישור שחרור.</b> כיסוי שלם הוא תנאי לסקירה הנדסית ואינו מחליף אותה.</p>
 <div class="sig"><div>בודק: ____________ תאריך: ______</div><div>מאשר: ____________ תאריך: ______</div></div></body></html>`;
 }
-async function downloadReport(r) {
-  const html = reportHtml(r), filename = `harness_report_${r.pn}_${r.serial}.html`.replace(/[^\w.\-]/g, '_');
+function downloadReport(r) { return downloadHtml(reportHtml(r), `harness_report_${r.pn}_${r.serial}.html`); }
+
+// ---------------- program approval ----------------
+const P = window.HQAP;
+const PST = { draft: ['טיוטה', 'warn'], submitted: ['ממתין לאישור', 'info'], approved: ['מאושרת', 'ok'], approved_with_deviations: ['מאושרת עם חריגות', 'ok'], rejected: ['נדחתה', 'bad'] };
+const IST = { pass: ['תקין', 'ok'], justify: ['דורש נימוק', 'warn'], fail: ['כשל', 'bad'] };
+const reqKey = pn => String(pn).replace(/[^\w\-.~:@+]/g, '_');
+const isApproved = p => p && (p.status === 'approved' || p.status === 'approved_with_deviations');
+function programFor(pn, fp) { return S.programs.filter(p => p.pn === pn && p.fingerprint === fp).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0] || null; }
+
+function vPrograms() {
+  const by = {}; for (const p of S.programs) (by[p.pn] = by[p.pn] || []).push(p);
+  names(S.programs.flatMap(p => [p.preparedBy, p.decision?.by])).then(() => S.view === 'programs' && document.querySelectorAll('[data-uid]').forEach(e => e.textContent = nameOf(e.dataset.uid)));
+  view(`<h1>אישור תוכניות בדיקה</h1>
+  <div class="panel"><div class="row" style="justify-content:space-between"><p class="muted" style="margin:0;max-width:64ch">בודקים את תוכנית הבודק מול הנטליסט המאומת ודרישות המק"ט, מנמקים כל חריגה, ומאשר אחר מחליט. תוכנית מאושרת ננעלת לפי טביעת האצבע שלה.</p>
+  <button class="acc" onclick="location.hash='program-new'">בדיקת תוכנית חדשה</button></div></div>
+  ${Object.keys(by).length ? Object.entries(by).map(([pn, list]) => `<div class="panel"><h2 class="mono">${esc(pn)}</h2><div class="scroll"><table class="stack"><thead><tr><th>תוכנית</th><th>טביעת אצבע</th><th>נטליסט</th><th>מצב</th><th>הוכן ע"י</th><th>הוחלט ע"י</th></tr></thead><tbody>${list.map(p =>
+    `<tr class="click" onclick="location.hash='program-${esc(p.id)}'"><td class="mono">${esc(p.structure?.program || '—')}</td><td class="mono small">${esc(p.fingerprint.slice(0, 8))}</td><td>מהדורה ${esc(p.netlistRev)}</td><td><span class="tag t-${PST[p.status][1]}">${esc(PST[p.status][0])}</span></td><td data-uid="${esc(p.preparedBy)}">${esc(nameOf(p.preparedBy))}</td><td>${p.decision ? `<span data-uid="${esc(p.decision.by)}">${esc(nameOf(p.decision.by))}</span> ${esc(fmtDate(p.decision.at))}` : '—'}</td></tr>`).join('')}</tbody></table></div></div>`).join('') : '<div class="panel empty">עדיין לא נבדקו תוכניות.</div>'}`);
+}
+
+function reqFields(r) {
+  r = r || {};
+  return `<div class="grid">
+   <div><label for="rqV">מתח בידוד נדרש (V)</label><input id="rqV" inputmode="decimal" value="${esc(r.isoVolt ?? '')}"></div>
+   <div><label for="rqM">מינימום בידוד נדרש (MΩ)</label><input id="rqM" inputmode="decimal" value="${esc(r.isoMinMohm ?? '')}"></div>
+   <div><label for="rqC">מקסימום רציפות (Ω)</label><input id="rqC" inputmode="decimal" value="${esc(r.contMaxOhm ?? '')}"></div>
+   <div><label for="rqT">טולרנס נגדים נדרש (±%)</label><input id="rqT" inputmode="decimal" value="${esc(r.resTolPct ?? '')}"></div>
+   <div style="grid-column:1/-1"><label for="rqS">מסמך מקור לדרישות</label><input id="rqS" value="${esc(r.source ?? '')}" placeholder="מפרט / נוהל / מהדורה"></div></div>`;
+}
+const readReq = () => { const n = id => { const v = $('#' + id).value.trim(); return v === '' ? null : +v; }; return { isoVolt: n('rqV'), isoMinMohm: n('rqM'), contMaxOhm: n('rqC'), resTolPct: n('rqT'), source: $('#rqS').value.trim() }; };
+
+function vProgramNew() {
+  const st = S.newProg || (S.newProg = { netlistId: '', run: null, fileName: '' });
+  const opts = S.netlists.map(n => `<option value="${esc(n.id)}" ${n.id === st.netlistId ? 'selected' : ''}>${esc(n.pn)} · מהדורה ${esc(n.rev)}${n.status === 'verified' ? '' : ' (טיוטה — לא ניתן לאשר)'}</option>`).join('');
+  view(`<h1>בדיקת תוכנית חדשה</h1>
+  <div class="panel"><h2>1. נטליסט מאומת</h2><label for="pnl">מק"ט ומהדורה</label><select id="pnl"><option value="">בחרו…</option>${opts}</select><div id="pnlW"></div></div>
+  <div class="panel"><h2>2. דרישות למק"ט</h2><p class="small muted">נשמרות למק"ט ומשמשות כל בדיקת תוכנית שלו. שדה ריק = לא נבדק.</p><div id="reqBox">${reqFields()}</div></div>
+  <div class="panel"><h2>3. התוכנית</h2><label for="pfile">דוח ריצה או הדפסת תוכנית (PDF / TXT / CSV)</label><input type="file" id="pfile" accept=".pdf,.txt,.csv,.log,text/plain">
+  <p class="small muted">נלקח רק מבנה התוכנית — קבוצות, סוג בידוד, פרמטרים וגבולות — לא הערכים שנמדדו.</p><div id="pinfo"></div></div>
+  <div class="panel row"><button id="pgo" class="acc" disabled>בצע בדיקת תוכנית</button><span id="pmsg" class="small muted"></span></div>`);
+  const loadReq = async () => {
+    const n = S.netlists.find(x => x.id === st.netlistId);
+    $('#pnlW').innerHTML = n && n.status !== 'verified' ? '<div class="note err">אפשר לבדוק, אבל תוכנית תאושר רק מול נטליסט מאומת.</div>' : '';
+    if (n) { const r = await getDoc('requirements', reqKey(n.pn)).catch(() => null); $('#reqBox').innerHTML = reqFields(r); }
+    upd();
+  };
+  const upd = () => { const ok = st.netlistId && st.run; $('#pgo').disabled = !ok; $('#pmsg').textContent = !st.netlistId ? 'בחרו נטליסט' : !st.run ? 'טענו קובץ' : ''; };
+  $('#pnl').onchange = () => { st.netlistId = $('#pnl').value; loadReq(); };
+  $('#pfile').onchange = async () => {
+    const f = $('#pfile').files[0]; if (!f) return; st.fileName = f.name; st.run = null; $('#pinfo').innerHTML = '<p class="muted">קורא…</p>';
+    try {
+      const lines = /pdf$/i.test(f.name) ? (await H.pdfToLines(pdfjsLib, new Uint8Array(await f.arrayBuffer()))).lines : (await f.text()).replace(/\r/g, '').split('\n');
+      const run = H.parseTester(lines);
+      if (!run || !run.groups.length) { $('#pinfo').innerHTML = '<div class="note err">הפורמט לא זוהה. אפשר להמיר דוח בעזרת Claude במסך "בדיקה חדשה" ולהשתמש בבדיקה שנוצרה.</div>'; upd(); return; }
+      st.run = run; const s = P.programStructure(run);
+      $('#pinfo').innerHTML = `<p>תוכנית <b class="mono">${esc(s.program || '—')}</b> · מהדורת שרטוט ${esc(s.schemaRev || '?')} · ${s.groups.length} קבוצות · ${s.fourWire.length} מדידות 4 חוטים · בידוד ${esc(s.params.isoVolt ?? '?')}V/${s.params.isoMinOhm != null ? s.params.isoMinOhm / 1e6 : '?'}MΩ · רציפות עד ${esc(s.params.contMaxOhm ?? '?')}Ω · טביעת אצבע <span class="mono">${esc(P.fingerprint(s).slice(0, 8))}</span></p>`;
+    } catch (e) { $('#pinfo').innerHTML = '<div class="note err">לא ניתן לקרוא: ' + esc(e.message || e) + '</div>'; }
+    upd();
+  };
+  $('#pgo').onclick = async () => {
+    const n = S.netlists.find(x => x.id === st.netlistId), req = readReq();
+    $('#pgo').disabled = true;
+    try {
+      await put('requirements', reqKey(n.pn), { pn: n.pn, ...req, updatedBy: S.me, updatedAt: now() });
+      const structure = P.programStructure(st.run), fp = P.fingerprint(structure);
+      const existing = S.programs.find(p => p.pn === n.pn && p.fingerprint === fp && p.netlistId === n.id && p.status !== 'rejected');
+      if (existing && !(await dialog('התוכנית כבר נבדקה', `<p>קיימת בדיקה של אותה תוכנית מול אותו נטליסט (${esc(PST[existing.status][0])}). לפתוח אותה?</p>`, 'פתח'))) { $('#pgo').disabled = false; return; }
+      if (existing) { S.newProg = null; location.hash = 'program-' + existing.id; return; }
+      const id = reqKey(n.pn) + '__' + fp.slice(0, 8) + '__' + uid().slice(-4);
+      const review = P.reviewProgram(H.parseNLF(n.text), structure, req);
+      await put('programs', id, { pn: n.pn, netlistId: n.id, netlistRev: n.rev, netlistUpdatedAt: n.updatedAt || null, netlistVerified: n.status === 'verified',
+        structure, fingerprint: fp, sourceFile: st.fileName, req, review, deviations: {}, status: 'draft', preparedBy: S.me, createdAt: now(), updatedAt: now(),
+        history: [{ at: now(), by: S.me, event: 'CREATED' }] });
+      S.newProg = null; location.hash = 'program-' + id;
+    } catch (e) { toast('שגיאה: ' + (e.code || e.message)); $('#pgo').disabled = false; }
+  };
+  if (st.netlistId) loadReq(); upd();
+}
+
+function vProgram(id) {
+  const p = S.programs.find(x => x.id === id);
+  if (!p) { view('<div class="panel empty">טוען…</div>'); return; }
+  const n = S.netlists.find(x => x.id === p.netlistId);
+  const stale = !n || n.updatedAt !== p.netlistUpdatedAt || n.status !== 'verified';
+  const ds = P.decisionState(p.review, p.deviations);
+  const mine = p.preparedBy === S.me, locked = p.status !== 'draft';
+  const canDecide = p.status === 'submitted' && !mine;
+  const devs = p.deviations || {};
+  const uids = [p.preparedBy, p.decision?.by, ...Object.values(devs).flatMap(d => [d.by, d.decidedBy])];
+  names(uids).then(() => S.view === 'program' && document.querySelectorAll('[data-uid]').forEach(e => e.textContent = nameOf(e.dataset.uid)));
+  const st = PST[p.status];
+  view(`<h1>תוכנית <span class="mono">${esc(p.structure.program || '—')}</span> · <span class="mono">${esc(p.pn)}</span></h1>
+  <div class="panel"><div class="row" style="justify-content:space-between;align-items:flex-start">
+    <div><p style="margin:0">מול נטליסט מהדורה <b>${esc(p.netlistRev)}</b> · טביעת אצבע <span class="mono">${esc(p.fingerprint)}</span> · מקור: ${esc(p.sourceFile)}</p>
+    <p class="small muted" style="margin:4px 0 0">הוכן ע"י <span data-uid="${esc(p.preparedBy)}">${esc(nameOf(p.preparedBy))}</span> ${esc(fmtDate(p.createdAt))}${p.req?.source ? ' · דרישות לפי ' + esc(p.req.source) : ''}</p></div>
+    <span class="stamp t-${st[1]}">${esc(st[0])}</span></div>
+    <div class="kpis">${p.review.criteria.map(c => `<div class="kpi"><strong class="t-${IST[c.status][1]}" style="font-size:18px">${esc(IST[c.status][0])}</strong>${esc(c.title)}</div>`).join('')}</div>
+    ${stale && !isApproved(p) ? '<div class="note err">הנטליסט השתנה או אינו מאומת מאז הבדיקה. יש לנתח מחדש לפני הגשה.</div>' : ''}
+    ${stale && isApproved(p) ? '<div class="note err">הנטליסט השתנה מאז האישור — האישור עשוי שלא לשקף את השרטוט הנוכחי. מומלץ לבטל ולבדוק מחדש.</div>' : ''}
+    ${p.decision ? `<div class="note">${esc(PST[p.decision.outcome]?.[0] || p.decision.outcome)} ע"י <span data-uid="${esc(p.decision.by)}">${esc(nameOf(p.decision.by))}</span> ב־${esc(fmtDate(p.decision.at))}${p.decision.note ? ' — ' + esc(p.decision.note) : ''}</div>` : ''}
+  </div>
+  ${p.review.criteria.map(c => `<div class="crit"><h3><span class="tag t-${IST[c.status][1]}">${esc(IST[c.status][0])}</span>${esc(c.title)}</h3><p class="why small muted">${esc(c.why)}${c.summary ? ' · <b>' + esc(c.summary) + '</b>' : ''}</p>
+    ${c.items.filter(i => i.status !== 'pass').map(i => { const d = devs[P.devId(i.key)] || {}; return `<div class="item" data-key="${esc(i.key)}"><div><span class="tag t-${IST[i.status][1]}">${esc(IST[i.status][0])}</span> <b class="mono">${esc(i.subject)}</b> — ${esc(i.detail)}</div>
+      <label>נימוק / התייחסות${d.by ? ` <span class="small muted">(<span data-uid="${esc(d.by)}">${esc(nameOf(d.by))}</span>)</span>` : ''}</label><textarea data-just ${locked ? 'disabled' : ''} placeholder="${i.status === 'fail' ? 'כשל: מה תוקן, או מדוע מתקבל כחריגה' : 'מדוע זה מקובל / איך מכוסה (למשל בדיקה ויזואלית לפי נוהל…)'}">${esc(d.justification || '')}</textarea>
+      <div class="dec">${d.decision ? `<span class="tag t-${d.decision === 'accepted' ? 'ok' : 'bad'}">${d.decision === 'accepted' ? 'התקבל' : 'נדחה'}</span> <span class="small muted"><span data-uid="${esc(d.decidedBy)}">${esc(nameOf(d.decidedBy))}</span> ${esc(fmtDate(d.decidedAt))}</span>` : ''}
+      ${canDecide && d.justification ? (d.decision ? `<button class="ghost" data-dec="${d.decision === 'accepted' ? 'rejected' : 'accepted'}" data-flip="1" style="min-height:36px;padding:4px 12px">${d.decision === 'accepted' ? 'שנה לדחייה' : 'שנה לקבלה'}</button>` : `<button class="ghost" data-dec="accepted" style="min-height:36px;padding:4px 12px">קבל</button><button class="ghost" data-dec="rejected" style="min-height:36px;padding:4px 12px">דחה</button>`) : ''}</div></div>`; }).join('')}
+    ${c.items.filter(i => i.status === 'pass').length ? `<details><summary class="small">תקין (${c.items.filter(i => i.status === 'pass').length})</summary>${c.items.filter(i => i.status === 'pass').map(i => `<div class="small">${esc(i.subject)} — ${esc(i.detail)}</div>`).join('')}</details>` : ''}</div>`).join('')}
+  <div class="panel"><h2>החלטה</h2>
+    <p>${ds.nonPass ? `${ds.nonPass} פריטים דורשים התייחסות: ${ds.unjustified.length} ללא נימוק · ${ds.open.length} ממתינים להחלטה · ${ds.accepted.length} התקבלו · ${ds.rejected.length} נדחו` : 'כל הקריטריונים תקינים.'}</p>
+    ${p.status === 'submitted' && mine ? '<p class="note">הגשתם את התוכנית — ההחלטה חייבת להתקבל ע"י בודק אחר.</p>' : ''}
+    <div class="row">
+      ${p.status === 'draft' ? `<button class="ghost" id="reanalyse">נתח מחדש</button><button class="acc" id="submit" ${ds.canSubmit && !stale && p.netlistVerified ? '' : 'disabled'}>הגש לאישור</button>` : ''}
+      ${p.status === 'submitted' && mine ? '<button class="ghost" id="toDraft">החזר לטיוטה</button>' : ''}
+      ${canDecide ? `<button class="acc" id="approve" ${ds.canApprove ? '' : 'disabled'}>${ds.nonPass ? 'אשר עם חריגות' : 'אשר תוכנית'}</button><button class="ghost" id="reject">דחה תוכנית</button>` : ''}
+      ${isApproved(p) || p.status === 'rejected' ? '<button class="ghost" id="revoke">פתח מחדש</button>' : ''}
+      <button class="ghost" id="pdl">הורד דוח אישור</button></div>
+    ${p.status === 'draft' && !ds.canSubmit ? '<p class="small muted">להגשה נדרש נימוק לכל פריט שאינו תקין' + (p.netlistVerified ? '' : ', ונטליסט מאומת') + '.</p>' : ''}
+    <details><summary class="small">היסטוריה (${(p.history || []).length})</summary>${(p.history || []).map(h => `<div class="small">${esc(fmtDate(h.at))} · <span data-uid="${esc(h.by)}">${esc(nameOf(h.by))}</span> · ${esc(h.event)}${h.key ? ' · ' + esc(h.key) : ''}</div>`).join('')}</details></div>`);
+  const hist = (event, extra) => [...(p.history || []), { at: now(), by: S.me, event, ...(extra || {}) }].slice(-300);
+  const save = async (data, event, extra) => { try { await patch('programs', id, { ...data, updatedAt: now(), history: hist(event, extra) }); } catch (e) { toast('שמירה נכשלה: ' + (e.code || e.message)); } };
+  $('#view').querySelectorAll('.item').forEach(el => {
+    const key = el.dataset.key, ta = el.querySelector('[data-just]');
+    const k = P.devId(key);
+    // write only this item's record (nested merge), so parallel edits by others are not overwritten
+    ta && ta.addEventListener('change', () => {
+      const cur = S.programs.find(x => x.id === id); const v = ta.value.trim();
+      if (((cur.deviations || {})[k]?.justification || '') === v) return;
+      save({ deviations: { [k]: { key, justification: v, by: S.me, at: now(), decision: null, decidedBy: null, decidedAt: null } } }, 'JUSTIFIED', { key });
+    });
+    el.querySelectorAll('[data-dec]').forEach(b => b.onclick = () => {
+      b.disabled = true;
+      save({ deviations: { [k]: { decision: b.dataset.dec, decidedBy: S.me, decidedAt: now() } } }, b.dataset.dec === 'accepted' ? 'DEVIATION_ACCEPTED' : 'DEVIATION_REJECTED', { key });
+    });
+  });
+  const on = (sel, fn) => { const b = $(sel); if (b) b.onclick = fn; };
+  on('#reanalyse', async () => {
+    const nn = S.netlists.find(x => x.id === p.netlistId); if (!nn) { toast('הנטליסט לא נמצא'); return; }
+    const req = await getDoc('requirements', reqKey(p.pn)).catch(() => null) || p.req;
+    const review = P.reviewProgram(H.parseNLF(nn.text), p.structure, req);
+    const keys = new Set(review.criteria.flatMap(c => c.items.map(i => P.devId(i.key))));
+    const d = Object.fromEntries(Object.entries(p.deviations || {}).filter(([k]) => keys.has(k)).map(([k, v]) => [k, { key: v.key, justification: v.justification, by: v.by, at: v.at, decision: null, decidedBy: null, decidedAt: null }]));
+    try { await put('programs', id, { ...stripId(p), review, req, deviations: d, netlistRev: nn.rev, netlistUpdatedAt: nn.updatedAt || null, netlistVerified: nn.status === 'verified', updatedAt: now(), history: hist('REANALYSED') }); } catch (e) { toast('שמירה נכשלה: ' + (e.code || e.message)); }
+  });
+  on('#submit', async () => { if (await dialog('להגיש לאישור?', '<p>אחרי ההגשה הנימוקים ננעלים, ובודק אחר יחליט על כל חריגה ועל התוכנית.</p>', 'הגש')) save({ status: 'submitted', submittedAt: now() }, 'SUBMITTED'); });
+  on('#toDraft', () => save({ status: 'draft' }, 'RETURNED_TO_DRAFT'));
+  on('#approve', async () => {
+    const outcome = ds.outcomeIfApproved;
+    const d = await dialog(outcome === 'approved' ? 'אישור תוכנית' : 'אישור עם חריגות', `<p>אתם מאשרים שהתוכנית (טביעת אצבע ${esc(p.fingerprint)}) מכסה את נטליסט מהדורה ${esc(p.netlistRev)}${ds.accepted.length ? ', עם ' + ds.accepted.length + ' חריגות מאושרות' : ''}. ההחלטה תירשם על שמכם.</p><label for="dn">הערה (רשות)</label><textarea id="dn"></textarea>`, 'אשר');
+    if (!d) return;
+    save({ status: outcome, decision: { outcome, by: S.me, at: now(), note: d.querySelector('#dn').value.trim(), fingerprint: p.fingerprint } }, 'APPROVED');
+  });
+  on('#reject', async () => {
+    const d = await dialog('דחיית התוכנית', '<label for="dn">סיבה</label><textarea id="dn"></textarea>', 'דחה'); if (!d) return;
+    const note = d.querySelector('#dn').value.trim(); if (!note) { toast('נדרשת סיבה'); return; }
+    save({ status: 'rejected', decision: { outcome: 'rejected', by: S.me, at: now(), note } }, 'REJECTED');
+  });
+  on('#revoke', async () => {
+    if (S.user && S.user.canEdit && !(await S.user.canEdit())) { toast('נדרשת הרשאת עורך'); return; }
+    const d = await dialog('לפתוח מחדש?', '<p>האישור יבוטל והתוכנית תחזור לטיוטה. בדיקות שכבר בוצעו יישארו עם הסטטוס שהיה בזמן ביצוען.</p><label for="dn">סיבה</label><textarea id="dn"></textarea>', 'פתח מחדש'); if (!d) return;
+    save({ status: 'draft', decision: null }, 'REOPENED', { note: d.querySelector('#dn').value.trim() });
+  });
+  on('#pdl', () => downloadHtml(programReportHtml(p, ds), `program_approval_${p.pn}_${p.fingerprint.slice(0, 8)}.html`));
+}
+
+const stripId = o => { const { id, ...rest } = o; return rest; };
+function programReportHtml(p, ds) {
+  const devs = p.deviations || {};
+  const st = PST[p.status][0];
+  return `<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>אישור תוכנית ${esc(p.pn)}</title><style>body{font:14px/1.5 Arial,sans-serif;margin:24px;max-width:900px;color:#111}h1{font-size:22px}table{border-collapse:collapse;width:100%;margin:8px 0}th,td{border:1px solid #bbb;padding:5px;text-align:right;vertical-align:top}th{background:#eee}.mono{font-family:monospace;direction:ltr;unicode-bidi:isolate}.st{font-size:18px;font-weight:bold;border:2px solid #111;padding:8px;margin:10px 0}</style></head><body>
+<h1>דוח בדיקה ואישור תוכנית בדיקה חשמלית</h1>
+<table><tr><th>מק"ט</th><td class="mono">${esc(p.pn)}</td><th>תוכנית</th><td class="mono">${esc(p.structure.program)}</td></tr>
+<tr><th>טביעת אצבע</th><td class="mono">${esc(p.fingerprint)}</td><th>מקור</th><td>${esc(p.sourceFile)}</td></tr>
+<tr><th>נטליסט</th><td>מהדורה ${esc(p.netlistRev)} ${p.netlistVerified ? '(מאומת)' : '(טיוטה)'}</td><th>מהדורה בתוכנית</th><td>${esc(p.structure.schemaRev)}</td></tr>
+<tr><th>דרישות</th><td colspan="3">בידוד ${esc(p.req?.isoVolt ?? '—')}V / ${esc(p.req?.isoMinMohm ?? '—')}MΩ · רציפות עד ${esc(p.req?.contMaxOhm ?? '—')}Ω · טולרנס נגדים ±${esc(p.req?.resTolPct ?? '—')}% · ${esc(p.req?.source || '')}</td></tr>
+<tr><th>הוכן ע"י</th><td>${esc(nameOf(p.preparedBy))} ${esc(fmtDate(p.createdAt))}</td><th>החלטה</th><td>${p.decision ? esc(PST[p.decision.outcome]?.[0]) + ' · ' + esc(nameOf(p.decision.by)) + ' · ' + esc(fmtDate(p.decision.at)) + (p.decision.note ? ' · ' + esc(p.decision.note) : '') : '—'}</td></tr></table>
+<div class="st">מצב: ${esc(st)}</div>
+<h2>קריטריונים</h2><table><tr><th>קריטריון</th><th>מצב</th><th>סיכום</th></tr>${p.review.criteria.map(c => `<tr><td>${esc(c.title)}</td><td>${esc(IST[c.status][0])}</td><td>${esc(c.summary || '')}</td></tr>`).join('')}</table>
+<h2>חריגות ונימוקים</h2><table><tr><th>פריט</th><th>ממצא</th><th>נימוק</th><th>החלטה</th></tr>${p.review.criteria.flatMap(c => c.items.filter(i => i.status !== 'pass').map(i => { const d = devs[P.devId(i.key)] || {}; return `<tr><td class="mono">${esc(i.subject)}<br><small>${esc(c.title)}</small></td><td>${esc(IST[i.status][0])}: ${esc(i.detail)}</td><td>${esc(d.justification || '—')}<br><small>${esc(nameOf(d.by))}</small></td><td>${d.decision ? (d.decision === 'accepted' ? 'התקבל' : 'נדחה') + '<br><small>' + esc(nameOf(d.decidedBy)) + ' ' + esc(fmtDate(d.decidedAt)) + '</small>' : '—'}</td></tr>`; })).join('') || '<tr><td colspan="4">אין</td></tr>'}</table>
+<p>אישור התוכנית מתייחס לטביעת האצבע לעיל בלבד. כל שינוי בתוכנית מחייב בדיקה ואישור מחדש. אישור התוכנית אינו אישור שחרור של יחידה.</p></body></html>`;
+}
+async function downloadHtml(html, filename) {
+  filename = filename.replace(/[^\w.\-]/g, '_');
   if (S.downloads) { try { await S.downloads.save({ filename, data: new Blob([html], { type: 'text/html' }) }); return; } catch (e) { if (e && e.code === 'cancelled') return; } }
-  try { await navigator.clipboard.writeText(html); toast('ההורדה אינה זמינה כאן — קוד הדוח הועתק. הדביקו לקובץ ‎.html ופתחו בדפדפן להדפסה.', 6000); }
-  catch (e) { toast('לא ניתן להוריד בתצוגה זו'); }
+  try { await navigator.clipboard.writeText(html); toast('ההורדה אינה זמינה כאן — קוד הדוח הועתק.', 6000); } catch (e) { toast('לא ניתן להוריד בתצוגה זו'); }
 }
 
 // ---------------- boot ----------------
